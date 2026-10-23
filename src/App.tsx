@@ -10,7 +10,8 @@ import { ConfirmProvider } from './components/Sheet';
 import { WeekGrid } from './components/WeekGrid';
 import { BurnCard } from './components/BurnCard';
 import { BurnLogSheet, BurnSettingsSheet } from './components/BurnSheet';
-import { ReservedCard, WeightCard } from './components/WeightCard';
+import { JourneyCard, JourneySettingsSheet, JourneySetupSheet } from './components/JourneyCard';
+import { WeightCard } from './components/WeightCard';
 import { WeightSetupSheet, WeightSheet } from './components/WeightSheet';
 import { ChevronLeft, ChevronRight, Plus, Settings } from './components/icons';
 
@@ -25,6 +26,8 @@ type SheetState =
   | { kind: 'weight-setup' }
   | { kind: 'burn-log' }
   | { kind: 'burn-settings' }
+  | { kind: 'journey-setup' }
+  | { kind: 'journey-settings' }
   | null;
 
 export function App() {
@@ -101,6 +104,8 @@ function Main() {
   const openWeightSetup = useCallback(() => setSheet({ kind: 'weight-setup' }), []);
   const openBurnLog = useCallback(() => setSheet({ kind: 'burn-log' }), []);
   const openBurnSettings = useCallback(() => setSheet({ kind: 'burn-settings' }), []);
+  const openJourneySetup = useCallback(() => setSheet({ kind: 'journey-setup' }), []);
+  const openJourneySettings = useCallback(() => setSheet({ kind: 'journey-settings' }), []);
   const onDetails = useCallback((habit: Habit) => setSheet({ kind: 'details', id: habit.id }), []);
 
   const days = useMemo(() => weekDays(week), [week]);
@@ -204,8 +209,12 @@ function Main() {
           <div className="cards">
             <WeightCard weight={store.weight} onOpen={openWeight} onSetup={openWeightSetup} />
             <BurnCard burn={store.burn} today={today} onLog={openBurnLog} onSettings={openBurnSettings} />
-            {/* Reserved slot for a future feature — replace with its real card. */}
-            <ReservedCard />
+            <JourneyCard
+              journey={store.journey}
+              today={today}
+              onSetup={openJourneySetup}
+              onSettings={openJourneySettings}
+            />
           </div>
         )}
       </main>
@@ -258,9 +267,28 @@ function Main() {
           getEntries={store.allEntries}
           weight={store.weight}
           burn={store.burn}
+          journey={store.journey}
           onImport={store.replaceAll}
           onReorder={() => setSheet({ kind: 'reorder' })}
           notify={notify}
+          onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'journey-setup' && (
+        <JourneySetupSheet
+          key="journey-setup"
+          today={today}
+          onSave={store.startJourney}
+          onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'journey-settings' && store.journey && (
+        <JourneySettingsSheet
+          key="journey-settings"
+          journey={store.journey}
+          today={today}
+          onSave={store.updateJourney}
+          onStartNew={openJourneySetup}
           onClose={closeSheet}
         />
       )}

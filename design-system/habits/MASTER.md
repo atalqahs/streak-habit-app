@@ -56,3 +56,5 @@ fit a dark, single-screen iPhone utility, so only the matching parts were kept (
 - Burn Goal: 10px meter in `--fire`; at 100% it stays full and a 5px `--gold` overflow bar sits
   directly beneath it. Reached state = gold total, check + text message, one sheen sweep.
   Calorie input uses `inputmode="numeric" pattern="[0-9]*"`; no preset amounts.
+- My Journey: 10px meter in `--journey` (teal) with 25/50/75% milestone ticks; large remaining-days
+  number; completion shows a teal check + "Journey Complete". No interactive controls besides settings.

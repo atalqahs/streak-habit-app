@@ -34,8 +34,7 @@ One screen, a seven-day grid, and Snapchat-style streaks. Everything is stored l
 The card below the weekly grid shows the latest weight, the change since the previous entry,
 start and goal, a progress bar, total lost, remaining, and the next 5 kg milestone. Weights can be
 logged for any past date (no schedule, no streaks). Several entries on one day are kept in the
-order logged; the most recent is current. One compact "Coming Soon" card is reserved at the end
-for a future feature (`ReservedCard` in `src/components/WeightCard.tsx`).
+order logged; the most recent is current. 
 
 ### Burn Goal
 A weekly (Sunday–Saturday, Kuwait time) calorie-burn meter. Enter the exact calories burned
@@ -45,14 +44,22 @@ weekly goal and planned training days are set in the card's settings; training d
 reference only and never change the goal. Goal changes apply from the current week, so past
 weeks keep the goal they had. Previous weeks and their entries are in the Log Burn sheet.
 
+### My Journey
+An automatic countdown to a chosen end date. Set it up once with a target end date (and an
+optional name); the start date is recorded as today in Kuwait time. Days elapsed, days remaining,
+progress and the next milestone (Quarter Way, Halfway There, Final Stretch, Journey Complete) are
+recalculated from calendar dates whenever the app opens, returns to the foreground, or passes
+Kuwait midnight — no daily input. The end date can be edited (the start date never changes), and
+a new journey can be started from the card's settings.
+
 ### Install on iPhone
 Open the site in **Safari** → **Share** → **Add to Home Screen**. It launches full-screen,
 offline, with its own icon and splash screen.
 
 ### Backups
 Data lives only in this browser's storage, which iOS may clear (for example after long
-inactivity, or when Safari website data is cleared). Backups include weight and calorie burn data; older
-backups still import and leave any section they don't contain (weight, burn) untouched. Use **Settings → Export Backup** regularly
+inactivity, or when Safari website data is cleared). Backups include weight, calorie burn and journey data; older
+backups still import and leave any section they don't contain (weight, burn, journey) untouched. Use **Settings → Export Backup** regularly
 and keep the JSON file in Files/iCloud Drive. **Import Backup** validates the whole file before
 replacing anything; a bad file leaves current data untouched.
 
@@ -71,7 +78,7 @@ npm run icons      # regenerate icons/splash PNGs (needs Playwright + Chromium)
 `https://<user>.github.io/<repo>/` and on a custom domain. The service worker (`dist/sw.js`) is
 generated at build time from `src/sw-template.js` with a content-hashed cache name. When a new
 version activates it removes the old cache and reloads open windows, so updates appear on the next
-launch. IndexedDB upgrades only ever add stores (v2 added weight, v3 added burn).
+launch. IndexedDB upgrades only ever add stores (v2 added weight, v3 burn, v4 journey).
 
 ## Deploying to GitHub Pages
 

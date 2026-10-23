@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { createBackup, parseBackup, BackupError } from '../lib/backup';
 import { todayKey } from '../lib/dates';
 import type { BurnData, WeightData } from '../lib/db';
+import type { JourneySettings } from '../lib/journey';
 import type { Entry, Habit } from '../lib/types';
 import { ChevronDown, ChevronRight, ChevronUp, Download, Reorder, Upload } from './icons';
 import { Sheet, useConfirm } from './Sheet';
@@ -11,7 +12,14 @@ interface SettingsProps {
   getEntries: () => Entry[];
   weight: WeightData;
   burn: BurnData;
-  onImport: (habits: Habit[], entries: Entry[], weight?: WeightData, burn?: BurnData) => Promise<void>;
+  journey: JourneySettings | null;
+  onImport: (
+    habits: Habit[],
+    entries: Entry[],
+    weight?: WeightData,
+    burn?: BurnData,
+    journey?: JourneySettings | null,
+  ) => Promise<void>;
   onReorder: () => void;
   notify: (message: string) => void;
   onClose: () => void;
@@ -46,7 +54,7 @@ async function shareOrDownload(file: File): Promise<'shared' | 'downloaded' | 'c
   return 'downloaded';
 }
 
-function Settings({ habits, getEntries, weight, burn, onImport, onReorder, notify }: SettingsProps) {
+function Settings({ habits, getEntries, weight, burn, journey, onImport, onReorder, notify }: SettingsProps) {
   const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -54,7 +62,7 @@ function Settings({ habits, getEntries, weight, burn, onImport, onReorder, notif
 
   const exportBackup = async () => {
     setError('');
-    const json = JSON.stringify(createBackup(habits, getEntries(), weight, burn), null, 1);
+    const json = JSON.stringify(createBackup(habits, getEntries(), weight, burn, journey), null, 1);
     const file = new File([json], `habits-backup-${todayKey()}.json`, { type: 'application/json' });
     const result = await shareOrDownload(file);
     if (result !== 'cancelled') notify('Backup exported');
@@ -74,12 +82,17 @@ function Settings({ habits, getEntries, weight, burn, onImport, onReorder, notif
             : ' This backup has no weight data, so your current weight data is kept.') +
           (data.burn
             ? ` Calorie burn data is replaced with ${data.burn.entries.length} entr${data.burn.entries.length === 1 ? 'y' : 'ies'}.`
-            : ' This backup has no calorie burn data, so your current burn data is kept.'),
+            : ' This backup has no calorie burn data, so your current burn data is kept.') +
+          (data.journey !== undefined
+            ? data.journey
+              ? ` Your journey is replaced with “${data.journey.name}”.`
+              : ' Your current journey is cleared.'
+            : ' This backup has no journey, so your current journey is kept.'),
         confirmLabel: 'Replace',
         destructive: true,
       });
       if (!ok) return;
-      await onImport(data.habits, data.entries, data.weight, data.burn);
+      await onImport(data.habits, data.entries, data.weight, data.burn, data.journey);
       notify('Backup restored');
     } catch (err) {
       setError(

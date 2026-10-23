@@ -1,12 +1,13 @@
 import { isDayKey } from './dates';
 import { MAX_KCAL, sortBurn, type BurnEntry, type BurnGoalVersion, type BurnSettings } from './burn';
 import type { BurnData, WeightData } from './db';
+import type { JourneySettings } from './journey';
 import { entryId, type Entry, type Habit, type HabitType, type ScheduleVersion } from './types';
 import { MAX_KG, MIN_KG, sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 export const BACKUP_FORMAT = 'habits-backup';
-/** v1: habits + entries. v2: adds `weight`. v3: adds `burn` (weekly goal + entries). */
-export const BACKUP_VERSION = 3;
+/** v1: habits + entries. v2: adds `weight`. v3: adds `burn`. v4: adds `journey`. */
+export const BACKUP_VERSION = 4;
 
 export interface Backup {
   format: typeof BACKUP_FORMAT;
@@ -16,6 +17,7 @@ export interface Backup {
   entries: Entry[];
   weight: WeightData;
   burn: BurnData;
+  journey: JourneySettings | null;
 }
 
 export interface ParsedBackup {
@@ -25,9 +27,17 @@ export interface ParsedBackup {
   weight?: WeightData;
   /** Undefined for backups made before v3: existing burn data should be kept. */
   burn?: BurnData;
+  /** Undefined for backups made before v4: the existing journey should be kept. */
+  journey?: JourneySettings | null;
 }
 
-export function createBackup(habits: Habit[], entries: Entry[], weight: WeightData, burn: BurnData): Backup {
+export function createBackup(
+  habits: Habit[],
+  entries: Entry[],
+  weight: WeightData,
+  burn: BurnData,
+  journey: JourneySettings | null,
+): Backup {
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -36,6 +46,7 @@ export function createBackup(habits: Habit[], entries: Entry[], weight: WeightDa
     entries,
     weight: { settings: weight.settings, entries: sortEntries(weight.entries) },
     burn: { settings: burn.settings, entries: sortBurn(burn.entries) },
+    journey,
   };
 }
 
@@ -182,6 +193,22 @@ function parseBurn(raw: unknown): BurnData {
   return { settings, entries: sortBurn(entries) };
 }
 
+function parseJourney(raw: unknown): JourneySettings | null {
+  if (raw === null) return null;
+  if (!isObj(raw) || !isDayKey(raw.start) || !isDayKey(raw.end))
+    fail('Journey dates in this backup are invalid.');
+  if (raw.end <= raw.start) fail('Journey end date must be after its start date.');
+  const name = isStr(raw.name) && raw.name.trim() ? raw.name.trim().slice(0, 40) : 'My Journey';
+  return {
+    id: 'settings',
+    name,
+    start: raw.start,
+    end: raw.end,
+    createdAt: isNum(raw.createdAt) ? raw.createdAt : 0,
+    updatedAt: isNum(raw.updatedAt) ? raw.updatedAt : 0,
+  };
+}
+
 /** Parses and fully validates a backup file. Throws BackupError with a readable message. */
 export function parseBackup(text: string): ParsedBackup {
   let data: unknown;
@@ -206,5 +233,6 @@ export function parseBackup(text: string): ParsedBackup {
   habits.sort((a, b) => a.order - b.order).forEach((h, i) => (h.order = i));
   const weight = data.version >= 2 && data.weight !== undefined ? parseWeight(data.weight) : undefined;
   const burn = data.version >= 3 && data.burn !== undefined ? parseBurn(data.burn) : undefined;
-  return { habits, entries, weight, burn };
+  const journey = data.version >= 4 && data.journey !== undefined ? parseJourney(data.journey) : undefined;
+  return { habits, entries, weight, burn, journey };
 }

@@ -1,5 +1,6 @@
 import type { Entry, Habit } from './types';
 import type { BurnEntry, BurnSettings } from './burn';
+import type { JourneySettings } from './journey';
 import type { WeightEntry, WeightSettings } from './weight';
 
 /** Minimal promise wrapper around IndexedDB — no third-party library. */
@@ -10,14 +11,16 @@ const DB_NAME = 'habits';
  *   v1: habits, entries
  *   v2: + weightSettings, weightEntries
  *   v3: + burnSettings, burnEntries
+ *   v4: + journey
  */
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const HABITS = 'habits';
 const ENTRIES = 'entries';
 const WEIGHT_SETTINGS = 'weightSettings';
 const WEIGHT_ENTRIES = 'weightEntries';
 const BURN_SETTINGS = 'burnSettings';
 const BURN_ENTRIES = 'burnEntries';
+const JOURNEY = 'journey';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -40,6 +43,7 @@ function open(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(BURN_ENTRIES)) {
         db.createObjectStore(BURN_ENTRIES, { keyPath: 'id' }).createIndex('date', 'date');
       }
+      if (!db.objectStoreNames.contains(JOURNEY)) db.createObjectStore(JOURNEY, { keyPath: 'id' });
     };
     request.onsuccess = () => {
       const db = request.result;
@@ -99,21 +103,28 @@ export async function loadAll(): Promise<{
   entries: Entry[];
   weight: WeightData;
   burn: BurnData;
+  journey: JourneySettings | null;
 }> {
-  const [habits, entries, settings, weightEntries, burnSettings, burnEntries] = await Promise.all([
+  const [habits, entries, settings, weightEntries, burnSettings, burnEntries, journey] = await Promise.all([
     getAll<Habit>(HABITS),
     getAll<Entry>(ENTRIES),
     getAll<WeightSettings>(WEIGHT_SETTINGS),
     getAll<WeightEntry>(WEIGHT_ENTRIES),
     getAll<BurnSettings>(BURN_SETTINGS),
     getAll<BurnEntry>(BURN_ENTRIES),
+    getAll<JourneySettings>(JOURNEY),
   ]);
   return {
     habits,
     entries,
     weight: { settings: settings[0] ?? null, entries: weightEntries },
     burn: { settings: burnSettings[0] ?? null, entries: burnEntries },
+    journey: journey[0] ?? null,
   };
+}
+
+export function putJourney(journey: JourneySettings): Promise<void> {
+  return run([JOURNEY], 'readwrite', (tx) => tx.objectStore(JOURNEY).put(journey));
 }
 
 export function putBurnSettings(settings: BurnSettings): Promise<void> {
@@ -182,8 +193,11 @@ export function replaceAll(
   entries: Entry[],
   weight?: WeightData,
   burn?: BurnData,
+  /** null clears the journey; undefined leaves it untouched. */
+  journey?: JourneySettings | null,
 ): Promise<void> {
   const stores = [HABITS, ENTRIES];
+  if (journey !== undefined) stores.push(JOURNEY);
   if (weight) stores.push(WEIGHT_SETTINGS, WEIGHT_ENTRIES);
   if (burn) stores.push(BURN_SETTINGS, BURN_ENTRIES);
   return run(stores, 'readwrite', (tx) => {
@@ -208,6 +222,11 @@ export function replaceAll(
       be.clear();
       if (burn.settings) bs.put(burn.settings);
       for (const entry of burn.entries) be.put(entry);
+    }
+    if (journey !== undefined) {
+      const js = tx.objectStore(JOURNEY);
+      js.clear();
+      if (journey) js.put(journey);
     }
   });
 }

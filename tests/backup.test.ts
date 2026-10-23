@@ -40,9 +40,17 @@ const burn = {
   ],
 };
 const sortedBurn = { ...burn, entries: [burn.entries[1], burn.entries[0]] };
+const journey = {
+  id: 'settings' as const,
+  name: 'Cut',
+  start: '2026-10-01',
+  end: '2027-01-09',
+  createdAt: 1,
+  updatedAt: 2,
+};
 
 const text = (overrides: Record<string, unknown> = {}) =>
-  JSON.stringify({ ...createBackup([habit], [entry], weight, burn), ...overrides });
+  JSON.stringify({ ...createBackup([habit], [entry], weight, burn, journey), ...overrides });
 
 describe('backup', () => {
   it('round-trips an export including weight data, sorted chronologically', () => {
@@ -51,6 +59,7 @@ describe('backup', () => {
       entries: [entry],
       weight: sortedWeight,
       burn: sortedBurn,
+      journey,
     });
   });
 
@@ -67,6 +76,7 @@ describe('backup', () => {
       entries: [entry],
       weight: undefined,
       burn: undefined,
+      journey: undefined,
     });
   });
 
@@ -82,6 +92,26 @@ describe('backup', () => {
     const parsed = parseBackup(v2);
     expect(parsed.weight).toEqual(sortedWeight);
     expect(parsed.burn).toBeUndefined();
+    expect(parsed.journey).toBeUndefined();
+  });
+
+  it('imports v3 backups without touching the journey', () => {
+    const v3 = JSON.stringify({
+      format: 'habits-backup',
+      version: 3,
+      exportedAt: 'x',
+      habits: [habit],
+      entries: [entry],
+      weight,
+      burn,
+    });
+    const parsed = parseBackup(v3);
+    expect(parsed.burn).toEqual(sortedBurn);
+    expect(parsed.journey).toBeUndefined();
+  });
+
+  it('a v4 backup without a journey clears it on import', () => {
+    expect(parseBackup(text({ journey: null })).journey).toBeNull();
   });
 
   it('accepts a v2 backup made before weight was set up', () => {
@@ -151,6 +181,8 @@ describe('backup', () => {
       'duplicate burn',
     ],
     ['malformed burn', text({ burn: 7 }), 'Calorie burn data'],
+    ['journey end before start', text({ journey: { ...journey, end: '2026-09-01' } }), 'after its start'],
+    ['journey bad date', text({ journey: { ...journey, start: '2026-02-31' } }), 'Journey dates'],
   ])('rejects %s', (_name, input, message) => {
     expect(() => parseBackup(input)).toThrow(BackupError);
     expect(() => parseBackup(input)).toThrow(message);

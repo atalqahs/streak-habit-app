@@ -30,6 +30,7 @@
   --weight-down: #5ad08a; /* subtle green: 9.8:1 on --surface */
   --weight-up: #d9a55a; /* muted amber: 8.5:1 on --surface */
   --gold: #f5c451; /* goal reached / surplus: 11:1 on --surface */
+  --journey: #3ecfb2; /* refined teal: 9.9:1 on --surface */
   --focus: #ffffff;
 
   --font:
@@ -1694,25 +1695,153 @@ p {
   opacity: 0.4;
 }
 
-/* Reserved slots: discreet, compact, no interaction. */
-.reserved-card {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s3);
-  padding: var(--s3) var(--s4);
+/* My Journey */
+.journey-body {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  font-variant-numeric: tabular-nums;
 }
 
-.reserved-title {
+.journey-now {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+}
+
+.journey-days {
+  display: inline-block;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  animation: bump 260ms var(--ease-out);
+}
+
+.journey-label {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-2);
 }
 
-.reserved-note {
+.journey-side {
+  margin-left: auto;
   font-size: 13px;
-  color: var(--text-3);
-  text-align: right;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.journey-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--journey);
+}
+
+.journey-bar {
+  position: relative;
+  height: 10px;
+  margin-top: var(--s1);
+  border-radius: 5px;
+  background: var(--control);
+  overflow: hidden;
+}
+
+.journey-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--journey);
+  transform-origin: left;
+  transition: transform 420ms var(--ease-out);
+  animation: bar-in 600ms var(--ease-out);
+}
+
+/* Milestone markers at 25 / 50 / 75 %. */
+.journey-tick {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.journey-tick.reached {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.journey-caption {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.journey-foot {
+  display: grid;
+  gap: var(--s1);
+  padding-top: var(--s3);
+  margin-top: var(--s1);
+  border-top: 1px solid var(--surface-line);
+}
+
+.journey-next {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px var(--s3);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.journey-next > span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.journey-next-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.journey-next.reached > span:last-child {
+  color: var(--journey);
+}
+
+.journey-message {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.journey-card.complete .journey-message {
+  color: var(--journey);
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.readonly-value {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 var(--s4);
+  border-radius: var(--r-sm);
+  border: 1.5px dashed rgba(255, 255, 255, 0.14);
+  font-size: 17px;
+  color: var(--text-2);
 }
 
 /* Weight sheet */

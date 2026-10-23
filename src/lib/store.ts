@@ -4,6 +4,7 @@ import { msUntilNextDay, todayKey, type DayKey } from './dates';
 import { computeStreak, type StreakInfo } from './streak';
 import { entryId, type Entry, type Habit } from './types';
 import { sortBurn, withGoal, type BurnEntry, type BurnSettings } from './burn';
+import type { JourneySettings } from './journey';
 import { sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 /** habitId → (date → entry) */
@@ -49,6 +50,7 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
   const [entries, setEntries] = useState<EntryIndex>(new Map());
   const [weight, setWeight] = useState<db.WeightData>({ settings: null, entries: [] });
   const [burn, setBurn] = useState<db.BurnData>({ settings: null, entries: [] });
+  const [journey, setJourney] = useState<JourneySettings | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
         setEntries(indexEntries(data.entries));
         setWeight({ settings: data.weight.settings, entries: sortEntries(data.weight.entries) });
         setBurn({ settings: data.burn.settings, entries: sortBurn(data.burn.entries) });
+        setJourney(data.journey);
       })
       .catch(() =>
         onError('Your saved habits could not be loaded. Storage may be unavailable in this browser mode.'),
@@ -128,12 +131,19 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
 
   /** A section that is undefined (absent from an older backup) keeps the current data. */
   const replaceAll = useCallback(
-    async (nextHabits: Habit[], nextEntries: Entry[], nextWeight?: db.WeightData, nextBurn?: db.BurnData) => {
-      await db.replaceAll(nextHabits, nextEntries, nextWeight, nextBurn);
+    async (
+      nextHabits: Habit[],
+      nextEntries: Entry[],
+      nextWeight?: db.WeightData,
+      nextBurn?: db.BurnData,
+      nextJourney?: JourneySettings | null,
+    ) => {
+      await db.replaceAll(nextHabits, nextEntries, nextWeight, nextBurn, nextJourney);
       setHabits([...nextHabits].sort(byOrder));
       setEntries(indexEntries(nextEntries));
       if (nextWeight) setWeight({ settings: nextWeight.settings, entries: sortEntries(nextWeight.entries) });
       if (nextBurn) setBurn({ settings: nextBurn.settings, entries: sortBurn(nextBurn.entries) });
+      if (nextJourney !== undefined) setJourney(nextJourney);
     },
     [],
   );
@@ -191,6 +201,37 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
       void persist(db.deleteWeightEntry(id));
     },
     [persist],
+  );
+
+  /* ---------- Journey ---------- */
+
+  /** Creates a journey starting today (Asia/Kuwait), replacing any current one. */
+  const startJourney = useCallback(
+    (name: string, end: string) => {
+      if (end <= today) return;
+      const next: JourneySettings = {
+        id: 'settings',
+        name,
+        start: today,
+        end,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      setJourney(next);
+      void persist(db.putJourney(next));
+    },
+    [persist, today],
+  );
+
+  /** Updates name and end date; the start date is never changed here. */
+  const updateJourney = useCallback(
+    (name: string, end: string) => {
+      if (!journey || end <= journey.start) return;
+      const next: JourneySettings = { ...journey, name, end, updatedAt: Date.now() };
+      setJourney(next);
+      void persist(db.putJourney(next));
+    },
+    [journey, persist],
   );
 
   /* ---------- Calorie burn ---------- */
@@ -259,6 +300,9 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
     saveBurnSettings,
     saveBurnEntry,
     deleteBurnEntry,
+    journey,
+    startJourney,
+    updateJourney,
   };
 }
 

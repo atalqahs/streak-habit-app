@@ -103,13 +103,3 @@ export const WeightCard = memo(function WeightCard({ weight, onOpen, onSetup }: 
     return `${formatKg(s.current)}, ${changeText}, ${Math.max(pct, 0)}% toward ${formatKg(settings!.goal)}`;
   }
 });
-
-/** Lightweight reserved slot for a future feature. Replace with a real card later. */
-export function ReservedCard() {
-  return (
-    <section className="card reserved-card" aria-label="Reserved for a future feature">
-      <span className="reserved-title">Coming Soon</span>
-      <span className="reserved-note">Reserved for a future feature</span>
-    </section>
-  );
-}
