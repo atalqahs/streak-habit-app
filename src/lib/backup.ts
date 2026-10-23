@@ -1,8 +1,11 @@
 import { isDayKey } from './dates';
+import type { WeightData } from './db';
 import { entryId, type Entry, type Habit, type HabitType, type ScheduleVersion } from './types';
+import { MAX_KG, MIN_KG, sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 export const BACKUP_FORMAT = 'habits-backup';
-export const BACKUP_VERSION = 1;
+/** v1: habits + entries. v2: adds `weight` (settings + measurements). */
+export const BACKUP_VERSION = 2;
 
 export interface Backup {
   format: typeof BACKUP_FORMAT;
@@ -10,15 +13,24 @@ export interface Backup {
   exportedAt: string;
   habits: Habit[];
   entries: Entry[];
+  weight: WeightData;
 }
 
-export function createBackup(habits: Habit[], entries: Entry[]): Backup {
+export interface ParsedBackup {
+  habits: Habit[];
+  entries: Entry[];
+  /** Undefined for habit-only (v1) backups: existing weight data should be kept. */
+  weight?: WeightData;
+}
+
+export function createBackup(habits: Habit[], entries: Entry[], weight: WeightData): Backup {
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     habits,
     entries,
+    weight: { settings: weight.settings, entries: sortEntries(weight.entries) },
   };
 }
 
@@ -89,8 +101,40 @@ function parseEntry(raw: unknown, index: number, habitIds: Set<string>): Entry {
   return { id: entryId(habitId, date), habitId, date, value, target };
 }
 
+const isKg = (v: unknown): v is number => isNum(v) && v >= MIN_KG && v <= MAX_KG;
+
+function parseWeight(raw: unknown): WeightData {
+  if (!isObj(raw) || !Array.isArray(raw.entries)) fail('Weight data in this backup is invalid.');
+  let settings: WeightSettings | null = null;
+  if (raw.settings !== null && raw.settings !== undefined) {
+    const s = raw.settings;
+    if (!isObj(s) || !isKg(s.start) || !isKg(s.goal)) {
+      fail(`Weight settings: start and goal must be between ${MIN_KG} and ${MAX_KG} kg.`);
+    }
+    if (s.start === s.goal) fail('Weight settings: goal must differ from the starting weight.');
+    settings = {
+      id: 'settings',
+      start: s.start,
+      goal: s.goal,
+      updatedAt: isNum(s.updatedAt) ? s.updatedAt : 0,
+    };
+  }
+  const entries = raw.entries.map((e, i): WeightEntry => {
+    const where = `Weight entry ${i + 1}`;
+    if (!isObj(e)) fail(`${where} is not an object.`);
+    if (!isStr(e.id) || !e.id) fail(`${where}: id is missing.`);
+    if (!isDayKey(e.date)) fail(`${where}: date is invalid.`);
+    if (!isKg(e.value)) fail(`${where}: weight must be between ${MIN_KG} and ${MAX_KG} kg.`);
+    return { id: e.id, date: e.date, value: e.value, recordedAt: isNum(e.recordedAt) ? e.recordedAt : 0 };
+  });
+  if (new Set(entries.map((e) => e.id)).size !== entries.length)
+    fail('This backup contains duplicate weight entries.');
+  if (!settings && entries.length) fail('Weight entries in this backup have no starting or goal weight.');
+  return { settings, entries: sortEntries(entries) };
+}
+
 /** Parses and fully validates a backup file. Throws BackupError with a readable message. */
-export function parseBackup(text: string): { habits: Habit[]; entries: Entry[] } {
+export function parseBackup(text: string): ParsedBackup {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -111,5 +155,6 @@ export function parseBackup(text: string): { habits: Habit[]; entries: Entry[] }
     fail('This backup contains duplicate records.');
 
   habits.sort((a, b) => a.order - b.order).forEach((h, i) => (h.order = i));
-  return { habits, entries };
+  const weight = data.version >= 2 && data.weight !== undefined ? parseWeight(data.weight) : undefined;
+  return { habits, entries, weight };
 }

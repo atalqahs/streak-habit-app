@@ -46,3 +46,10 @@ fit a dark, single-screen iPhone utility, so only the matching parts were kept (
 - Transform/opacity only. `prefers-reduced-motion` collapses all motion.
 - Week swipe: 12px threshold + horizontal dominance, live finger tracking, arrow buttons as the
   non-gesture alternative.
+
+## Cards below the grid
+- Same surface, border, radius (20) and gutter as the weekly grid; 12px gap between cards.
+- Weight: 34/700 current value with tabular figures; change uses arrow + text plus color
+  (`--weight-down` green / `--weight-up` muted amber / gray), never color alone.
+- Progress bar: 6px, white fill on `--control`, animated with `transform: scaleX` only.
+- Reserved cards: one compact row, muted text, no interaction.

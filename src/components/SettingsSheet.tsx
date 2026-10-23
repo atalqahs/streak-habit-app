@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { createBackup, parseBackup, BackupError } from '../lib/backup';
 import { todayKey } from '../lib/dates';
+import type { WeightData } from '../lib/db';
 import type { Entry, Habit } from '../lib/types';
 import { ChevronDown, ChevronRight, ChevronUp, Download, Reorder, Upload } from './icons';
 import { Sheet, useConfirm } from './Sheet';
@@ -8,7 +9,8 @@ import { Sheet, useConfirm } from './Sheet';
 interface SettingsProps {
   habits: Habit[];
   getEntries: () => Entry[];
-  onImport: (habits: Habit[], entries: Entry[]) => Promise<void>;
+  weight: WeightData;
+  onImport: (habits: Habit[], entries: Entry[], weight?: WeightData) => Promise<void>;
   onReorder: () => void;
   notify: (message: string) => void;
   onClose: () => void;
@@ -43,7 +45,7 @@ async function shareOrDownload(file: File): Promise<'shared' | 'downloaded' | 'c
   return 'downloaded';
 }
 
-function Settings({ habits, getEntries, onImport, onReorder, notify }: SettingsProps) {
+function Settings({ habits, getEntries, weight, onImport, onReorder, notify }: SettingsProps) {
   const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +53,7 @@ function Settings({ habits, getEntries, onImport, onReorder, notify }: SettingsP
 
   const exportBackup = async () => {
     setError('');
-    const json = JSON.stringify(createBackup(habits, getEntries()), null, 1);
+    const json = JSON.stringify(createBackup(habits, getEntries(), weight), null, 1);
     const file = new File([json], `habits-backup-${todayKey()}.json`, { type: 'application/json' });
     const result = await shareOrDownload(file);
     if (result !== 'cancelled') notify('Backup exported');
@@ -64,12 +66,16 @@ function Settings({ habits, getEntries, onImport, onReorder, notify }: SettingsP
       const data = parseBackup(await file.text());
       const ok = await confirm({
         title: 'Replace all data?',
-        message: `This replaces your ${habits.length} current habit${habits.length === 1 ? '' : 's'} with ${data.habits.length} habit${data.habits.length === 1 ? '' : 's'} and ${data.entries.length} record${data.entries.length === 1 ? '' : 's'} from the backup.`,
+        message:
+          `This replaces your ${habits.length} current habit${habits.length === 1 ? '' : 's'} with ${data.habits.length} habit${data.habits.length === 1 ? '' : 's'} and ${data.entries.length} record${data.entries.length === 1 ? '' : 's'} from the backup.` +
+          (data.weight
+            ? ` Weight data is replaced with ${data.weight.entries.length} weight entr${data.weight.entries.length === 1 ? 'y' : 'ies'}.`
+            : ' This backup has no weight data, so your current weight data is kept.'),
         confirmLabel: 'Replace',
         destructive: true,
       });
       if (!ok) return;
-      await onImport(data.habits, data.entries);
+      await onImport(data.habits, data.entries, data.weight);
       notify('Backup restored');
     } catch (err) {
       setError(

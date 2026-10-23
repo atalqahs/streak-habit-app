@@ -1,11 +1,19 @@
 import type { Entry, Habit } from './types';
+import type { WeightEntry, WeightSettings } from './weight';
 
 /** Minimal promise wrapper around IndexedDB — no third-party library. */
 
 const DB_NAME = 'habits';
-const DB_VERSION = 1;
+/**
+ * Schema history — upgrades only ever add stores, never clear or rewrite data.
+ *   v1: habits, entries
+ *   v2: + weightSettings, weightEntries
+ */
+const DB_VERSION = 2;
 const HABITS = 'habits';
 const ENTRIES = 'entries';
+const WEIGHT_SETTINGS = 'weightSettings';
+const WEIGHT_ENTRIES = 'weightEntries';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -17,6 +25,11 @@ function open(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(HABITS)) db.createObjectStore(HABITS, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(ENTRIES)) {
         db.createObjectStore(ENTRIES, { keyPath: 'id' }).createIndex('habitId', 'habitId');
+      }
+      if (!db.objectStoreNames.contains(WEIGHT_SETTINGS))
+        db.createObjectStore(WEIGHT_SETTINGS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(WEIGHT_ENTRIES)) {
+        db.createObjectStore(WEIGHT_ENTRIES, { keyPath: 'id' }).createIndex('date', 'date');
       }
     };
     request.onsuccess = () => {
@@ -62,9 +75,35 @@ function getAll<T>(store: string): Promise<T[]> {
   );
 }
 
-export async function loadAll(): Promise<{ habits: Habit[]; entries: Entry[] }> {
-  const [habits, entries] = await Promise.all([getAll<Habit>(HABITS), getAll<Entry>(ENTRIES)]);
-  return { habits, entries };
+export interface WeightData {
+  settings: WeightSettings | null;
+  entries: WeightEntry[];
+}
+
+export async function loadAll(): Promise<{ habits: Habit[]; entries: Entry[]; weight: WeightData }> {
+  const [habits, entries, settings, weightEntries] = await Promise.all([
+    getAll<Habit>(HABITS),
+    getAll<Entry>(ENTRIES),
+    getAll<WeightSettings>(WEIGHT_SETTINGS),
+    getAll<WeightEntry>(WEIGHT_ENTRIES),
+  ]);
+  return { habits, entries, weight: { settings: settings[0] ?? null, entries: weightEntries } };
+}
+
+export function putWeightSettings(settings: WeightSettings): Promise<void> {
+  return run([WEIGHT_SETTINGS], 'readwrite', (tx) => tx.objectStore(WEIGHT_SETTINGS).put(settings));
+}
+
+/** Saves settings and any number of measurements atomically (used by first-time setup). */
+export function putWeight(settings: WeightSettings | null, entries: WeightEntry[]): Promise<void> {
+  return run([WEIGHT_SETTINGS, WEIGHT_ENTRIES], 'readwrite', (tx) => {
+    if (settings) tx.objectStore(WEIGHT_SETTINGS).put(settings);
+    for (const entry of entries) tx.objectStore(WEIGHT_ENTRIES).put(entry);
+  });
+}
+
+export function deleteWeightEntry(id: string): Promise<void> {
+  return run([WEIGHT_ENTRIES], 'readwrite', (tx) => tx.objectStore(WEIGHT_ENTRIES).delete(id));
 }
 
 export function putHabits(habits: Habit[]): Promise<void> {
@@ -96,15 +135,27 @@ export function deleteHabit(id: string): Promise<void> {
   });
 }
 
-/** Replaces every record in one transaction — either all of it lands or none. */
-export function replaceAll(habits: Habit[], entries: Entry[]): Promise<void> {
-  return run([HABITS, ENTRIES], 'readwrite', (tx) => {
+/**
+ * Replaces every record in one transaction — either all of it lands or none.
+ * When `weight` is undefined (a habit-only backup), weight data is left untouched.
+ */
+export function replaceAll(habits: Habit[], entries: Entry[], weight?: WeightData): Promise<void> {
+  const stores = weight ? [HABITS, ENTRIES, WEIGHT_SETTINGS, WEIGHT_ENTRIES] : [HABITS, ENTRIES];
+  return run(stores, 'readwrite', (tx) => {
     const h = tx.objectStore(HABITS);
     const e = tx.objectStore(ENTRIES);
     h.clear();
     e.clear();
     for (const habit of habits) h.put(habit);
     for (const entry of entries) e.put(entry);
+    if (weight) {
+      const ws = tx.objectStore(WEIGHT_SETTINGS);
+      const we = tx.objectStore(WEIGHT_ENTRIES);
+      ws.clear();
+      we.clear();
+      if (weight.settings) ws.put(weight.settings);
+      for (const entry of weight.entries) we.put(entry);
+    }
   });
 }
 

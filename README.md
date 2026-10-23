@@ -30,13 +30,21 @@ One screen, a seven-day grid, and Snapchat-style streaks. Everything is stored l
   the edit and are stored as versions, so past days keep their original schedule. Counter/value
   records store the target they were logged against, so changing a goal never rewrites history.
 
+### Weight tracker
+The card below the weekly grid shows the latest weight, the change since the previous entry,
+start and goal, a progress bar, total lost, remaining, and the next 5 kg milestone. Weights can be
+logged for any past date (no schedule, no streaks). Several entries on one day are kept in the
+order logged; the most recent is current. Two compact "Coming Soon" cards are reserved below it
+for future features (`ReservedCard` in `src/components/WeightCard.tsx`).
+
 ### Install on iPhone
 Open the site in **Safari** → **Share** → **Add to Home Screen**. It launches full-screen,
 offline, with its own icon and splash screen.
 
 ### Backups
 Data lives only in this browser's storage, which iOS may clear (for example after long
-inactivity, or when Safari website data is cleared). Use **Settings → Export Backup** regularly
+inactivity, or when Safari website data is cleared). Backups include weight data; older
+habit-only backups still import and leave existing weight data untouched. Use **Settings → Export Backup** regularly
 and keep the JSON file in Files/iCloud Drive. **Import Backup** validates the whole file before
 replacing anything; a bad file leaves current data untouched.
 
@@ -53,7 +61,9 @@ npm run icons      # regenerate icons/splash PNGs (needs Playwright + Chromium)
 
 `vite.config.ts` uses `base: './'`, so the same build works at
 `https://<user>.github.io/<repo>/` and on a custom domain. The service worker (`dist/sw.js`) is
-generated at build time from `src/sw-template.js` with a content-hashed cache name.
+generated at build time from `src/sw-template.js` with a content-hashed cache name. When a new
+version activates it removes the old cache and reloads open windows, so updates appear on the next
+launch. IndexedDB upgrades only ever add stores (v1 → v2 added the weight stores).
 
 ## Deploying to GitHub Pages
 

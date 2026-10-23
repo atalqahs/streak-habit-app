@@ -13,14 +13,21 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((k) => k.startsWith('habits-') && k !== CACHE).map((k) => caches.delete(k))),
-      )
-      .then(() => self.clients.claim()),
-  );
+  const activated = (async () => {
+    const stale = (await caches.keys()).filter((k) => k.startsWith('habits-') && k !== CACHE);
+    await Promise.all(stale.map((k) => caches.delete(k)));
+    await self.clients.claim();
+    return stale.length > 0;
+  })();
+  event.waitUntil(activated);
+  // This replaced an older version: reload open windows so they show the new
+  // interface immediately (works even when the page runs the previous code).
+  // Done after activation completes — the reload's request needs an active worker.
+  activated.then(async (updated) => {
+    if (!updated) return;
+    const windows = await self.clients.matchAll({ type: 'window' });
+    for (const client of windows) client.navigate(client.url).catch(() => {});
+  });
 });
 
 self.addEventListener('fetch', (event) => {

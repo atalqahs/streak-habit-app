@@ -27,6 +27,8 @@
   --fire-core: #ffc04d;
   --amber: #ffb340;
   --danger: #ff453a;
+  --weight-down: #5ad08a; /* subtle green: 9.8:1 on --surface */
+  --weight-up: #d9a55a; /* muted amber: 8.5:1 on --surface */
   --focus: #ffffff;
 
   --font:
@@ -798,6 +800,7 @@ p {
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: var(--s2) var(--s3);
 }
 
@@ -1257,6 +1260,311 @@ p {
     opacity: 0;
     transform: translateY(12px);
   }
+}
+
+/* ---------- Cards below the grid ----------
+   Same surface, border, radius and gutters as the weekly grid card. */
+.cards {
+  display: grid;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--surface-line);
+  border-radius: var(--r-lg);
+  padding: var(--s4);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-height: 32px;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.card-note {
+  font-size: 15px;
+  color: var(--text-2);
+}
+
+.log-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--control);
+}
+
+.log-chip:active {
+  background: var(--control-pressed);
+}
+
+/* Weight */
+.weight-empty {
+  display: grid;
+  gap: var(--s3);
+}
+
+.weight-body {
+  display: grid;
+  gap: var(--s3);
+  width: 100%;
+  margin-top: var(--s2);
+  text-align: left;
+  border-radius: var(--r-sm);
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--t-press);
+}
+
+.weight-body:active {
+  opacity: 0.8;
+}
+
+.weight-now {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+}
+
+.weight-value {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.weight-unit {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.weight-change {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.weight-change.down {
+  color: var(--weight-down);
+}
+
+.weight-change.up {
+  color: var(--weight-up);
+}
+
+.weight-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--control);
+  overflow: hidden;
+}
+
+.weight-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--text);
+  transform-origin: left;
+  transition: transform var(--t-sheet-in) var(--ease-out);
+  animation: bar-in 480ms var(--ease-out);
+}
+
+@keyframes bar-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.weight-range {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-top: calc(var(--s1) * -1);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.weight-range strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.weight-pct {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.weight-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--surface-line);
+}
+
+.weight-metrics > div {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 var(--s2);
+}
+
+.weight-metrics > div:first-child {
+  padding-left: 0;
+}
+
+.weight-metrics > div + div {
+  border-left: 1px solid var(--surface-line);
+}
+
+.weight-metrics dt {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.weight-metrics dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.weight-metrics .metric-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+/* Reserved slots: discreet, compact, no interaction. */
+.reserved-card {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+}
+
+.reserved-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.reserved-note {
+  font-size: 13px;
+  color: var(--text-3);
+  text-align: right;
+}
+
+/* Weight sheet */
+.weight-sheet {
+  display: grid;
+  gap: var(--s3);
+}
+
+.date-input {
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: dark;
+  min-width: 0;
+  text-align: left;
+}
+
+.date-input::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+.weight-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.weight-history li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  min-height: 50px;
+  padding: 0 var(--s4);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--t-press);
+}
+
+.history-row:active {
+  background: var(--control-pressed);
+}
+
+.history-date {
+  min-width: 0;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-value {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.history-delta {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.history-delta.down {
+  color: var(--weight-down);
+}
+
+.history-delta.up {
+  color: var(--weight-up);
+}
+
+.history-edit {
+  padding: var(--s3) var(--s4) var(--s4);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.edit-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--s2);
+}
+
+.edit-actions .btn {
+  padding: 0 var(--s2);
+}
+
+.show-all {
+  justify-self: start;
+}
+
+.weight-sheet .value-input .input {
+  padding-right: 44px;
 }
 
 /* ---------- Reduced motion ---------- */

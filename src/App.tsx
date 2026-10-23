@@ -8,6 +8,8 @@ import { ProgressSheet } from './components/ProgressSheet';
 import { ReorderSheet, SettingsSheet } from './components/SettingsSheet';
 import { ConfirmProvider } from './components/Sheet';
 import { WeekGrid } from './components/WeekGrid';
+import { ReservedCard, WeightCard } from './components/WeightCard';
+import { WeightSetupSheet, WeightSheet } from './components/WeightSheet';
 import { ChevronLeft, ChevronRight, Plus, Settings } from './components/icons';
 
 type SheetState =
@@ -17,6 +19,8 @@ type SheetState =
   | { kind: 'progress'; id: string; date: DayKey }
   | { kind: 'settings' }
   | { kind: 'reorder' }
+  | { kind: 'weight' }
+  | { kind: 'weight-setup' }
   | null;
 
 export function App() {
@@ -89,6 +93,8 @@ function Main() {
       setSheet({ kind: 'progress', id: habit.id, date });
     }
   }, []);
+  const openWeight = useCallback(() => setSheet({ kind: 'weight' }), []);
+  const openWeightSetup = useCallback(() => setSheet({ kind: 'weight-setup' }), []);
   const onDetails = useCallback((habit: Habit) => setSheet({ kind: 'details', id: habit.id }), []);
 
   const days = useMemo(() => weekDays(week), [week]);
@@ -187,6 +193,15 @@ function Main() {
             />
           )
         )}
+
+        {store.ready && (
+          <div className="cards">
+            <WeightCard weight={store.weight} onOpen={openWeight} onSetup={openWeightSetup} />
+            {/* Reserved slots for future features — replace each with its real card. */}
+            <ReservedCard />
+            <ReservedCard />
+          </div>
+        )}
       </main>
 
       {sheet?.kind === 'add' && (
@@ -235,9 +250,24 @@ function Main() {
           key="settings"
           habits={habits}
           getEntries={store.allEntries}
+          weight={store.weight}
           onImport={store.replaceAll}
           onReorder={() => setSheet({ kind: 'reorder' })}
           notify={notify}
+          onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'weight-setup' && (
+        <WeightSetupSheet key="weight-setup" onSave={store.setupWeight} onClose={closeSheet} />
+      )}
+      {sheet?.kind === 'weight' && (
+        <WeightSheet
+          key="weight"
+          weight={store.weight}
+          today={today}
+          onSaveEntry={store.saveWeightEntry}
+          onDeleteEntry={store.deleteWeightEntry}
+          onSaveTargets={store.saveWeightSettings}
           onClose={closeSheet}
         />
       )}
