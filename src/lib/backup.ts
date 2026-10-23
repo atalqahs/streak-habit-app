@@ -1,11 +1,12 @@
 import { isDayKey } from './dates';
-import type { WeightData } from './db';
+import { MAX_KCAL, sortBurn, type BurnEntry, type BurnGoalVersion, type BurnSettings } from './burn';
+import type { BurnData, WeightData } from './db';
 import { entryId, type Entry, type Habit, type HabitType, type ScheduleVersion } from './types';
 import { MAX_KG, MIN_KG, sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 export const BACKUP_FORMAT = 'habits-backup';
-/** v1: habits + entries. v2: adds `weight` (settings + measurements). */
-export const BACKUP_VERSION = 2;
+/** v1: habits + entries. v2: adds `weight`. v3: adds `burn` (weekly goal + entries). */
+export const BACKUP_VERSION = 3;
 
 export interface Backup {
   format: typeof BACKUP_FORMAT;
@@ -14,6 +15,7 @@ export interface Backup {
   habits: Habit[];
   entries: Entry[];
   weight: WeightData;
+  burn: BurnData;
 }
 
 export interface ParsedBackup {
@@ -21,9 +23,11 @@ export interface ParsedBackup {
   entries: Entry[];
   /** Undefined for habit-only (v1) backups: existing weight data should be kept. */
   weight?: WeightData;
+  /** Undefined for backups made before v3: existing burn data should be kept. */
+  burn?: BurnData;
 }
 
-export function createBackup(habits: Habit[], entries: Entry[], weight: WeightData): Backup {
+export function createBackup(habits: Habit[], entries: Entry[], weight: WeightData, burn: BurnData): Backup {
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -31,6 +35,7 @@ export function createBackup(habits: Habit[], entries: Entry[], weight: WeightDa
     habits,
     entries,
     weight: { settings: weight.settings, entries: sortEntries(weight.entries) },
+    burn: { settings: burn.settings, entries: sortBurn(burn.entries) },
   };
 }
 
@@ -133,6 +138,50 @@ function parseWeight(raw: unknown): WeightData {
   return { settings, entries: sortEntries(entries) };
 }
 
+const isWholeKcal = (v: unknown): v is number =>
+  Number.isInteger(v) && (v as number) >= 0 && (v as number) <= MAX_KCAL;
+
+function parseBurn(raw: unknown): BurnData {
+  if (!isObj(raw) || !Array.isArray(raw.entries)) fail('Calorie burn data in this backup is invalid.');
+  let settings: BurnSettings | null = null;
+  if (raw.settings !== null && raw.settings !== undefined) {
+    const s = raw.settings;
+    if (!isObj(s) || !Array.isArray(s.goals) || s.goals.length === 0 || !Array.isArray(s.trainingDays)) {
+      fail('Burn goal settings in this backup are invalid.');
+    }
+    const goals = s.goals.map((g, i): BurnGoalVersion => {
+      if (!isObj(g) || !isDayKey(g.from) || !isWholeKcal(g.goal) || g.goal < 1) {
+        fail(`Burn goal ${i + 1}: the weekly goal must be a whole number of at least 1 kcal.`);
+      }
+      return { from: g.from, goal: g.goal };
+    });
+    for (let i = 1; i < goals.length; i++) {
+      if (goals[i].from <= goals[i - 1].from) fail('Burn goals must be in increasing date order.');
+    }
+    const days = s.trainingDays as unknown[];
+    if (!days.every((d) => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6)) {
+      fail('Training days must be numbers from 0 to 6.');
+    }
+    settings = {
+      id: 'settings',
+      goals,
+      trainingDays: [...new Set(days as number[])].sort((a, b) => a - b),
+      updatedAt: isNum(s.updatedAt) ? s.updatedAt : 0,
+    };
+  }
+  const entries = raw.entries.map((e, i): BurnEntry => {
+    const where = `Burn entry ${i + 1}`;
+    if (!isObj(e)) fail(`${where} is not an object.`);
+    if (!isStr(e.id) || !e.id) fail(`${where}: id is missing.`);
+    if (!isDayKey(e.date)) fail(`${where}: date is invalid.`);
+    if (!isWholeKcal(e.kcal)) fail(`${where}: calories must be a whole number of 0 or more.`);
+    return { id: e.id, date: e.date, kcal: e.kcal, recordedAt: isNum(e.recordedAt) ? e.recordedAt : 0 };
+  });
+  if (new Set(entries.map((e) => e.id)).size !== entries.length)
+    fail('This backup contains duplicate burn entries.');
+  return { settings, entries: sortBurn(entries) };
+}
+
 /** Parses and fully validates a backup file. Throws BackupError with a readable message. */
 export function parseBackup(text: string): ParsedBackup {
   let data: unknown;
@@ -156,5 +205,6 @@ export function parseBackup(text: string): ParsedBackup {
 
   habits.sort((a, b) => a.order - b.order).forEach((h, i) => (h.order = i));
   const weight = data.version >= 2 && data.weight !== undefined ? parseWeight(data.weight) : undefined;
-  return { habits, entries, weight };
+  const burn = data.version >= 3 && data.burn !== undefined ? parseBurn(data.burn) : undefined;
+  return { habits, entries, weight, burn };
 }

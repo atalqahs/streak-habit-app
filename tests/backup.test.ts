@@ -27,13 +27,31 @@ const weight = {
   ],
 };
 const sortedWeight = { ...weight, entries: [weight.entries[1], weight.entries[0]] };
+const burn = {
+  settings: {
+    id: 'settings' as const,
+    goals: [{ from: '2026-10-18', goal: 1750 }],
+    trainingDays: [1, 2, 3],
+    updatedAt: 3,
+  },
+  entries: [
+    { id: 'b2', date: '2026-10-20', kcal: 400, recordedAt: 2 },
+    { id: 'b1', date: '2026-10-19', kcal: 350, recordedAt: 1 },
+  ],
+};
+const sortedBurn = { ...burn, entries: [burn.entries[1], burn.entries[0]] };
 
 const text = (overrides: Record<string, unknown> = {}) =>
-  JSON.stringify({ ...createBackup([habit], [entry], weight), ...overrides });
+  JSON.stringify({ ...createBackup([habit], [entry], weight, burn), ...overrides });
 
 describe('backup', () => {
   it('round-trips an export including weight data, sorted chronologically', () => {
-    expect(parseBackup(text())).toEqual({ habits: [habit], entries: [entry], weight: sortedWeight });
+    expect(parseBackup(text())).toEqual({
+      habits: [habit],
+      entries: [entry],
+      weight: sortedWeight,
+      burn: sortedBurn,
+    });
   });
 
   it('imports legacy habit-only (v1) backups without touching weight', () => {
@@ -44,7 +62,26 @@ describe('backup', () => {
       habits: [habit],
       entries: [entry],
     });
-    expect(parseBackup(legacy)).toEqual({ habits: [habit], entries: [entry], weight: undefined });
+    expect(parseBackup(legacy)).toEqual({
+      habits: [habit],
+      entries: [entry],
+      weight: undefined,
+      burn: undefined,
+    });
+  });
+
+  it('imports v2 backups (habits + weight) without touching burn data', () => {
+    const v2 = JSON.stringify({
+      format: 'habits-backup',
+      version: 2,
+      exportedAt: 'x',
+      habits: [habit],
+      entries: [entry],
+      weight,
+    });
+    const parsed = parseBackup(v2);
+    expect(parsed.weight).toEqual(sortedWeight);
+    expect(parsed.burn).toBeUndefined();
   });
 
   it('accepts a v2 backup made before weight was set up', () => {
@@ -88,6 +125,32 @@ describe('backup', () => {
       'duplicate weight',
     ],
     ['malformed weight', text({ weight: 'x' }), 'Weight data'],
+    [
+      'fractional kcal',
+      text({ burn: { ...burn, entries: [{ ...burn.entries[0], kcal: 12.5 }] } }),
+      'whole number',
+    ],
+    [
+      'negative kcal',
+      text({ burn: { ...burn, entries: [{ ...burn.entries[0], kcal: -1 }] } }),
+      'whole number',
+    ],
+    [
+      'zero goal',
+      text({ burn: { ...burn, settings: { ...burn.settings, goals: [{ from: '2026-10-18', goal: 0 }] } } }),
+      'at least 1',
+    ],
+    [
+      'bad training day',
+      text({ burn: { ...burn, settings: { ...burn.settings, trainingDays: [9] } } }),
+      '0 to 6',
+    ],
+    [
+      'duplicate burn entry',
+      text({ burn: { ...burn, entries: [burn.entries[0], burn.entries[0]] } }),
+      'duplicate burn',
+    ],
+    ['malformed burn', text({ burn: 7 }), 'Calorie burn data'],
   ])('rejects %s', (_name, input, message) => {
     expect(() => parseBackup(input)).toThrow(BackupError);
     expect(() => parseBackup(input)).toThrow(message);

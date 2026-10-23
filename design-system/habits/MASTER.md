@@ -53,3 +53,6 @@ fit a dark, single-screen iPhone utility, so only the matching parts were kept (
   (`--weight-down` green / `--weight-up` muted amber / gray), never color alone.
 - Progress bar: 6px, white fill on `--control`, animated with `transform: scaleX` only.
 - Reserved cards: one compact row, muted text, no interaction.
+- Burn Goal: 10px meter in `--fire`; at 100% it stays full and a 5px `--gold` overflow bar sits
+  directly beneath it. Reached state = gold total, check + text message, one sheen sweep.
+  Calorie input uses `inputmode="numeric" pattern="[0-9]*"`; no preset amounts.

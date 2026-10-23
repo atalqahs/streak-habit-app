@@ -18,6 +18,8 @@ interface Props {
   /** Return true to block dismissal (e.g. to confirm discarding edits). */
   onBeforeDismiss?: () => Promise<boolean> | boolean;
   variant?: 'sheet' | 'alert';
+  /** Focus the element marked `data-autofocus` on open (brings up the keyboard on iPhone). */
+  focusField?: boolean;
 }
 
 /**
@@ -26,7 +28,7 @@ interface Props {
  * Dismiss by tapping the scrim, the close button, Escape, or dragging the
  * grabber/header down.
  */
-export function Sheet({ title, onClose, children, onBeforeDismiss, variant = 'sheet' }: Props) {
+export function Sheet({ title, onClose, children, onBeforeDismiss, variant = 'sheet', focusField }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [closing, setClosing] = useState(false);
@@ -41,6 +43,8 @@ export function Sheet({ title, onClose, children, onBeforeDismiss, variant = 'sh
     panelRef.current!.setAttribute('autofocus', '');
     dialog.showModal();
     dialog.scrollTop = 0;
+    // Runs within the opening tap's task, so iOS allows the keyboard to appear.
+    if (focusField) dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus({ preventScroll: true });
     if (openSheets++ === 0) document.documentElement.classList.add('sheet-open');
     return () => {
       if (dialog.open) dialog.close();

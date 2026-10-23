@@ -8,6 +8,8 @@ import { ProgressSheet } from './components/ProgressSheet';
 import { ReorderSheet, SettingsSheet } from './components/SettingsSheet';
 import { ConfirmProvider } from './components/Sheet';
 import { WeekGrid } from './components/WeekGrid';
+import { BurnCard } from './components/BurnCard';
+import { BurnLogSheet, BurnSettingsSheet } from './components/BurnSheet';
 import { ReservedCard, WeightCard } from './components/WeightCard';
 import { WeightSetupSheet, WeightSheet } from './components/WeightSheet';
 import { ChevronLeft, ChevronRight, Plus, Settings } from './components/icons';
@@ -21,6 +23,8 @@ type SheetState =
   | { kind: 'reorder' }
   | { kind: 'weight' }
   | { kind: 'weight-setup' }
+  | { kind: 'burn-log' }
+  | { kind: 'burn-settings' }
   | null;
 
 export function App() {
@@ -95,6 +99,8 @@ function Main() {
   }, []);
   const openWeight = useCallback(() => setSheet({ kind: 'weight' }), []);
   const openWeightSetup = useCallback(() => setSheet({ kind: 'weight-setup' }), []);
+  const openBurnLog = useCallback(() => setSheet({ kind: 'burn-log' }), []);
+  const openBurnSettings = useCallback(() => setSheet({ kind: 'burn-settings' }), []);
   const onDetails = useCallback((habit: Habit) => setSheet({ kind: 'details', id: habit.id }), []);
 
   const days = useMemo(() => weekDays(week), [week]);
@@ -197,8 +203,8 @@ function Main() {
         {store.ready && (
           <div className="cards">
             <WeightCard weight={store.weight} onOpen={openWeight} onSetup={openWeightSetup} />
-            {/* Reserved slots for future features — replace each with its real card. */}
-            <ReservedCard />
+            <BurnCard burn={store.burn} today={today} onLog={openBurnLog} onSettings={openBurnSettings} />
+            {/* Reserved slot for a future feature — replace with its real card. */}
             <ReservedCard />
           </div>
         )}
@@ -251,9 +257,29 @@ function Main() {
           habits={habits}
           getEntries={store.allEntries}
           weight={store.weight}
+          burn={store.burn}
           onImport={store.replaceAll}
           onReorder={() => setSheet({ kind: 'reorder' })}
           notify={notify}
+          onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'burn-log' && (
+        <BurnLogSheet
+          key="burn-log"
+          burn={store.burn}
+          today={today}
+          onSave={store.saveBurnEntry}
+          onDelete={store.deleteBurnEntry}
+          onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'burn-settings' && (
+        <BurnSettingsSheet
+          key="burn-settings"
+          burn={store.burn}
+          today={today}
+          onSave={store.saveBurnSettings}
           onClose={closeSheet}
         />
       )}

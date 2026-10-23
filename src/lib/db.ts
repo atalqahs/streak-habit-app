@@ -1,4 +1,5 @@
 import type { Entry, Habit } from './types';
+import type { BurnEntry, BurnSettings } from './burn';
 import type { WeightEntry, WeightSettings } from './weight';
 
 /** Minimal promise wrapper around IndexedDB — no third-party library. */
@@ -8,12 +9,15 @@ const DB_NAME = 'habits';
  * Schema history — upgrades only ever add stores, never clear or rewrite data.
  *   v1: habits, entries
  *   v2: + weightSettings, weightEntries
+ *   v3: + burnSettings, burnEntries
  */
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const HABITS = 'habits';
 const ENTRIES = 'entries';
 const WEIGHT_SETTINGS = 'weightSettings';
 const WEIGHT_ENTRIES = 'weightEntries';
+const BURN_SETTINGS = 'burnSettings';
+const BURN_ENTRIES = 'burnEntries';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -30,6 +34,11 @@ function open(): Promise<IDBDatabase> {
         db.createObjectStore(WEIGHT_SETTINGS, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(WEIGHT_ENTRIES)) {
         db.createObjectStore(WEIGHT_ENTRIES, { keyPath: 'id' }).createIndex('date', 'date');
+      }
+      if (!db.objectStoreNames.contains(BURN_SETTINGS))
+        db.createObjectStore(BURN_SETTINGS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(BURN_ENTRIES)) {
+        db.createObjectStore(BURN_ENTRIES, { keyPath: 'id' }).createIndex('date', 'date');
       }
     };
     request.onsuccess = () => {
@@ -80,14 +89,43 @@ export interface WeightData {
   entries: WeightEntry[];
 }
 
-export async function loadAll(): Promise<{ habits: Habit[]; entries: Entry[]; weight: WeightData }> {
-  const [habits, entries, settings, weightEntries] = await Promise.all([
+export interface BurnData {
+  settings: BurnSettings | null;
+  entries: BurnEntry[];
+}
+
+export async function loadAll(): Promise<{
+  habits: Habit[];
+  entries: Entry[];
+  weight: WeightData;
+  burn: BurnData;
+}> {
+  const [habits, entries, settings, weightEntries, burnSettings, burnEntries] = await Promise.all([
     getAll<Habit>(HABITS),
     getAll<Entry>(ENTRIES),
     getAll<WeightSettings>(WEIGHT_SETTINGS),
     getAll<WeightEntry>(WEIGHT_ENTRIES),
+    getAll<BurnSettings>(BURN_SETTINGS),
+    getAll<BurnEntry>(BURN_ENTRIES),
   ]);
-  return { habits, entries, weight: { settings: settings[0] ?? null, entries: weightEntries } };
+  return {
+    habits,
+    entries,
+    weight: { settings: settings[0] ?? null, entries: weightEntries },
+    burn: { settings: burnSettings[0] ?? null, entries: burnEntries },
+  };
+}
+
+export function putBurnSettings(settings: BurnSettings): Promise<void> {
+  return run([BURN_SETTINGS], 'readwrite', (tx) => tx.objectStore(BURN_SETTINGS).put(settings));
+}
+
+export function putBurnEntry(entry: BurnEntry): Promise<void> {
+  return run([BURN_ENTRIES], 'readwrite', (tx) => tx.objectStore(BURN_ENTRIES).put(entry));
+}
+
+export function deleteBurnEntry(id: string): Promise<void> {
+  return run([BURN_ENTRIES], 'readwrite', (tx) => tx.objectStore(BURN_ENTRIES).delete(id));
 }
 
 export function putWeightSettings(settings: WeightSettings): Promise<void> {
@@ -137,10 +175,17 @@ export function deleteHabit(id: string): Promise<void> {
 
 /**
  * Replaces every record in one transaction — either all of it lands or none.
- * When `weight` is undefined (a habit-only backup), weight data is left untouched.
+ * A section that is undefined (absent from an older backup) is left untouched.
  */
-export function replaceAll(habits: Habit[], entries: Entry[], weight?: WeightData): Promise<void> {
-  const stores = weight ? [HABITS, ENTRIES, WEIGHT_SETTINGS, WEIGHT_ENTRIES] : [HABITS, ENTRIES];
+export function replaceAll(
+  habits: Habit[],
+  entries: Entry[],
+  weight?: WeightData,
+  burn?: BurnData,
+): Promise<void> {
+  const stores = [HABITS, ENTRIES];
+  if (weight) stores.push(WEIGHT_SETTINGS, WEIGHT_ENTRIES);
+  if (burn) stores.push(BURN_SETTINGS, BURN_ENTRIES);
   return run(stores, 'readwrite', (tx) => {
     const h = tx.objectStore(HABITS);
     const e = tx.objectStore(ENTRIES);
@@ -155,6 +200,14 @@ export function replaceAll(habits: Habit[], entries: Entry[], weight?: WeightDat
       we.clear();
       if (weight.settings) ws.put(weight.settings);
       for (const entry of weight.entries) we.put(entry);
+    }
+    if (burn) {
+      const bs = tx.objectStore(BURN_SETTINGS);
+      const be = tx.objectStore(BURN_ENTRIES);
+      bs.clear();
+      be.clear();
+      if (burn.settings) bs.put(burn.settings);
+      for (const entry of burn.entries) be.put(entry);
     }
   });
 }

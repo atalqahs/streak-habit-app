@@ -3,6 +3,7 @@ import * as db from './db';
 import { msUntilNextDay, todayKey, type DayKey } from './dates';
 import { computeStreak, type StreakInfo } from './streak';
 import { entryId, type Entry, type Habit } from './types';
+import { sortBurn, withGoal, type BurnEntry, type BurnSettings } from './burn';
 import { sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 /** habitId → (date → entry) */
@@ -47,6 +48,7 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
   const [habits, setHabits] = useState<Habit[]>([]);
   const [entries, setEntries] = useState<EntryIndex>(new Map());
   const [weight, setWeight] = useState<db.WeightData>({ settings: null, entries: [] });
+  const [burn, setBurn] = useState<db.BurnData>({ settings: null, entries: [] });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -55,6 +57,7 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
         setHabits(data.habits.sort(byOrder));
         setEntries(indexEntries(data.entries));
         setWeight({ settings: data.weight.settings, entries: sortEntries(data.weight.entries) });
+        setBurn({ settings: data.burn.settings, entries: sortBurn(data.burn.entries) });
       })
       .catch(() =>
         onError('Your saved habits could not be loaded. Storage may be unavailable in this browser mode.'),
@@ -123,13 +126,14 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
     [entries, persist, today],
   );
 
-  /** `nextWeight` undefined (habit-only backup) keeps the current weight data. */
+  /** A section that is undefined (absent from an older backup) keeps the current data. */
   const replaceAll = useCallback(
-    async (nextHabits: Habit[], nextEntries: Entry[], nextWeight?: db.WeightData) => {
-      await db.replaceAll(nextHabits, nextEntries, nextWeight);
+    async (nextHabits: Habit[], nextEntries: Entry[], nextWeight?: db.WeightData, nextBurn?: db.BurnData) => {
+      await db.replaceAll(nextHabits, nextEntries, nextWeight, nextBurn);
       setHabits([...nextHabits].sort(byOrder));
       setEntries(indexEntries(nextEntries));
       if (nextWeight) setWeight({ settings: nextWeight.settings, entries: sortEntries(nextWeight.entries) });
+      if (nextBurn) setBurn({ settings: nextBurn.settings, entries: sortBurn(nextBurn.entries) });
     },
     [],
   );
@@ -189,6 +193,44 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
     [persist],
   );
 
+  /* ---------- Calorie burn ---------- */
+
+  /** Saves the weekly goal (effective from this week) and planned training days. */
+  const saveBurnSettings = useCallback(
+    (goal: number, trainingDays: number[]) => {
+      const settings: BurnSettings = {
+        id: 'settings',
+        goals: withGoal(burn.settings, goal, today),
+        trainingDays: [...new Set(trainingDays)].sort((a, b) => a - b),
+        updatedAt: Date.now(),
+      };
+      setBurn((b) => ({ ...b, settings }));
+      void persist(db.putBurnSettings(settings));
+    },
+    [burn.settings, persist, today],
+  );
+
+  /** Adds an entry, or updates one whose id already exists. Future dates are rejected. */
+  const saveBurnEntry = useCallback(
+    (input: BurnEntry) => {
+      if (input.date > today || !Number.isInteger(input.kcal) || input.kcal < 0) return;
+      const isNew = !burn.entries.some((e) => e.id === input.id);
+      const recordedAt = burn.entries.reduce((max, e) => Math.max(max, e.recordedAt + 1), Date.now());
+      const entry = isNew ? { ...input, recordedAt } : input;
+      setBurn((b) => ({ ...b, entries: sortBurn([...b.entries.filter((e) => e.id !== entry.id), entry]) }));
+      void persist(db.putBurnEntry(entry));
+    },
+    [burn.entries, persist, today],
+  );
+
+  const deleteBurnEntry = useCallback(
+    (id: string) => {
+      setBurn((b) => ({ ...b, entries: b.entries.filter((e) => e.id !== id) }));
+      void persist(db.deleteBurnEntry(id));
+    },
+    [persist],
+  );
+
   const streaks = useMemo(() => {
     const map = new Map<string, StreakInfo>();
     for (const habit of habits) map.set(habit.id, computeStreak(habit, entries.get(habit.id), today));
@@ -213,6 +255,10 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
     setupWeight,
     saveWeightEntry,
     deleteWeightEntry,
+    burn,
+    saveBurnSettings,
+    saveBurnEntry,
+    deleteBurnEntry,
   };
 }
 

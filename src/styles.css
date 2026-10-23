@@ -29,6 +29,7 @@
   --danger: #ff453a;
   --weight-down: #5ad08a; /* subtle green: 9.8:1 on --surface */
   --weight-up: #d9a55a; /* muted amber: 8.5:1 on --surface */
+  --gold: #f5c451; /* goal reached / surplus: 11:1 on --surface */
   --focus: #ffffff;
 
   --font:
@@ -1449,6 +1450,248 @@ p {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-2);
+}
+
+/* Burn Goal */
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.card-actions .icon-btn.small {
+  width: 32px;
+  height: 32px;
+}
+
+.card-actions .icon-btn.small::before {
+  inset: -6px;
+}
+
+.burn-body {
+  display: grid;
+  gap: var(--s2);
+  width: 100%;
+  margin-top: var(--s2);
+  text-align: left;
+  border-radius: var(--r-sm);
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--t-press);
+}
+
+.burn-body:active {
+  opacity: 0.8;
+}
+
+.burn-now {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.burn-total {
+  display: inline-block;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  transform-origin: left bottom;
+  animation: bump 260ms var(--ease-out);
+  transition: color var(--t-state);
+}
+
+.burn-card.reached .burn-total {
+  color: var(--gold);
+}
+
+@keyframes bump {
+  40% {
+    transform: scale(1.06);
+  }
+}
+
+.burn-goal {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.burn-pct {
+  margin-left: auto;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.burn-meter {
+  display: grid;
+  gap: 3px;
+  margin-top: var(--s1);
+}
+
+.burn-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--control);
+  overflow: hidden;
+}
+
+.burn-bar span,
+.burn-overflow span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left;
+  transition: transform 420ms var(--ease-out);
+  animation: bar-in 520ms var(--ease-out);
+}
+
+.burn-bar span {
+  background: var(--fire);
+}
+
+/* Surplus: a thinner gold bar attached directly beneath the full goal bar. */
+.burn-overflow {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(245, 196, 81, 0.14);
+  overflow: hidden;
+}
+
+.burn-overflow span {
+  background: var(--gold);
+}
+
+/* One-time sheen when the goal is reached during the session. */
+.burn-meter.celebrate .burn-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 236, 180, 0.75) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: sheen 900ms var(--ease-out) 120ms forwards;
+}
+
+@keyframes sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.burn-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.burn-status.reached {
+  color: var(--gold);
+}
+
+.burn-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  padding-top: var(--s3);
+  margin-top: var(--s1);
+  border-top: 1px solid var(--surface-line);
+}
+
+.burn-day {
+  position: relative;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1.5px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.burn-day.training {
+  color: var(--text);
+}
+
+.burn-day.today {
+  border-color: var(--ring-today);
+}
+
+.burn-day.logged::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--fire);
+}
+
+/* Burn sheet */
+.burn-sheet {
+  display: grid;
+  gap: var(--s3);
+}
+
+.editing-note {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fire);
+}
+
+.burn-week {
+  display: grid;
+  gap: var(--s2);
+}
+
+.burn-week-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s3);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.burn-week-range {
+  color: var(--text);
+}
+
+.burn-week-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.burn-week-total.reached {
+  color: var(--gold);
+}
+
+.burn-week-surplus {
+  color: var(--gold);
+}
+
+.burn-week-empty {
+  padding: 0 0 var(--s1);
+}
+
+.burn-row {
+  grid-template-columns: 1fr auto;
+}
+
+.burn-row.active {
+  background: var(--control-pressed);
+}
+
+.btn:disabled {
+  opacity: 0.4;
 }
 
 /* Reserved slots: discreet, compact, no interaction. */
