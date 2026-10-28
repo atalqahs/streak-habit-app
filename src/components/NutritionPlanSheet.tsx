@@ -13,6 +13,7 @@ import {
   validateDraft,
   type NutritionPlan,
   type PlanDraft,
+  type SaveOptions,
 } from '../lib/fatloss';
 import { CATEGORIES, FOODS, foodById, scale, sum, variantOf, type Per100 } from '../lib/foods';
 import { Close, Plus } from './icons';
@@ -123,7 +124,7 @@ function itemTotals(items: UiItem[]): Per100 {
 interface Props {
   plan: NutritionPlan | null;
   today: DayKey;
-  onSave: (draft: PlanDraft) => void;
+  onSave: (draft: PlanDraft, options?: SaveOptions) => void;
   onClose: () => void;
 }
 
@@ -155,6 +156,8 @@ function PlanEditor({ plan, today, onSave, onDirty }: Props & { onDirty: () => v
   const confirm = useConfirm();
   const current = planOn(plan, today) ?? plan?.versions[plan.versions.length - 1] ?? null;
 
+  // First plan only: start today unless the user confirms they followed it since Saturday.
+  const [sinceSaturday, setSinceSaturday] = useState(false);
   const [ui, setUi] = useState<UiDraft>(() => {
     if (current) {
       const d = draftFromVersion(current);
@@ -244,11 +247,12 @@ function PlanEditor({ plan, today, onSave, onDirty }: Props & { onDirty: () => v
   const submit = (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!valid) return;
-    onSave(toDraft(ui));
+    onSave(toDraft(ui), { sinceWeekStart: !plan && sinceSaturday });
     close();
   };
 
   const firstFrom = fatWeekStart(today);
+  const canBackdate = !plan && firstFrom < today;
   const single = ui.templates[0];
 
   return (
@@ -454,10 +458,41 @@ function PlanEditor({ plan, today, onSave, onDirty }: Props & { onDirty: () => v
         </ul>
       )}
 
+      {canBackdate && (
+        <fieldset className="field">
+          <legend>Plan Starts</legend>
+          <div className="segmented" role="radiogroup" aria-label="Plan starts">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!sinceSaturday}
+              className={!sinceSaturday ? 'selected' : ''}
+              onClick={() => setSinceSaturday(false)}
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={sinceSaturday}
+              className={sinceSaturday ? 'selected' : ''}
+              onClick={() => setSinceSaturday(true)}
+            >
+              Since Saturday
+            </button>
+          </div>
+          <p className="helper">
+            {sinceSaturday
+              ? `Counts from ${formatDay(firstFrom, today)}. Choose this only if you have followed this exact plan every day since then.`
+              : `Counts from today, ${formatDay(today, today)}. Earlier days this week are not estimated.`}
+          </p>
+        </fieldset>
+      )}
+
       <p className="helper">
         {plan
           ? `Changes apply from today (${formatDay(today, today)}). Earlier days keep the plan they used.`
-          : `Applies from ${formatDay(firstFrom, today)} — the start of this Saturday–Friday week — and repeats every week until you change it.`}
+          : `${canBackdate ? 'After that it' : `Starts today, ${formatDay(today, today)}, and`} repeats every Saturday–Friday week until you change it.`}
       </p>
 
       <button type="submit" className="btn primary block" disabled={!valid}>

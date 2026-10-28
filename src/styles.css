@@ -2083,6 +2083,31 @@ p {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.fat-row.subtotal {
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fat-row.group-label {
+  grid-template-columns: 1fr;
+  padding-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.fat-split {
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.fat-provisional {
+  color: var(--text-3);
+}
+
 .fat-macros {
   font-size: 15px;
   font-variant-numeric: tabular-nums;

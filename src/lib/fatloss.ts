@@ -180,14 +180,28 @@ export function versionFromDraft(draft: PlanDraft, from: DayKey): PlanVersion {
   };
 }
 
+export interface SaveOptions {
+  /**
+   * First plan only: the user confirmed they have followed it since this week's
+   * Saturday. Without this confirmation no earlier day is ever assumed.
+   */
+  sinceWeekStart?: boolean;
+}
+
 /**
- * Adds a version to the plan. The very first plan applies from the start of the
- * current Saturday–Friday week so the counter is meaningful immediately; later
- * edits apply from today, and an edit on the same day replaces that day's version.
- * Completed weeks are never rewritten.
+ * Adds a version to the plan. Every version applies from today by default — no
+ * past adherence is assumed. Only a first plan may start on the current week's
+ * Saturday, and only when the user confirms it (`sinceWeekStart`). An edit on the
+ * same day replaces that day's version; completed weeks are never rewritten.
  */
-export function withVersion(plan: NutritionPlan | null, draft: PlanDraft, today: DayKey): NutritionPlan {
-  const from = plan && plan.versions.length ? today : fatWeekStart(today);
+export function withVersion(
+  plan: NutritionPlan | null,
+  draft: PlanDraft,
+  today: DayKey,
+  options: SaveOptions = {},
+): NutritionPlan {
+  const isFirst = !plan || plan.versions.length === 0;
+  const from = isFirst && options.sinceWeekStart ? fatWeekStart(today) : today;
   const kept = (plan?.versions ?? []).filter((v) => v.from < from);
   return {
     id: 'plan',
@@ -415,8 +429,17 @@ export interface WeekBalance {
   counted: number;
   /** Days of the week up to and including today. */
   elapsed: number;
+  /** Weekly total = completed days + today's projection. */
   netDeficit: number;
   fatGrams: number;
+  /** Finished days only — final for those days. */
+  completed: { days: number; deficit: number; fatGrams: number };
+  /**
+   * Today's projection: the whole day's planned intake and estimated expenditure
+   * (plus anything logged so far). Provisional until Kuwait midnight; null when
+   * today is outside this week or cannot be estimated.
+   */
+  todayProjected: { deficit: number; fatGrams: number } | null;
   macros: Macros;
 }
 
@@ -434,13 +457,20 @@ export function weekBalance(ix: Indexed, start: DayKey, today: DayKey): WeekBala
     }),
     { protein: 0, carbs: 0, fat: 0, unknown: 0 },
   );
+  const perKg = (ix.plan?.profile ?? PROFILE).kcalPerKgFat;
+  const toGrams = (kcal: number) => (kcal / perKg) * 1000;
+  const done = counted.filter((d) => d.status === 'complete');
+  const completedDeficit = done.reduce((s, d) => s + d.deficit, 0);
+  const todayDay = counted.find((d) => d.status === 'today');
   return {
     start,
     days,
     counted: counted.length,
     elapsed: days.filter((d) => d.date <= today).length,
     netDeficit,
-    fatGrams: (netDeficit / (ix.plan?.profile ?? PROFILE).kcalPerKgFat) * 1000,
+    fatGrams: toGrams(netDeficit),
+    completed: { days: done.length, deficit: completedDeficit, fatGrams: toGrams(completedDeficit) },
+    todayProjected: todayDay ? { deficit: todayDay.deficit, fatGrams: toGrams(todayDay.deficit) } : null,
     macros,
   };
 }

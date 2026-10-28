@@ -5,7 +5,7 @@ import { computeStreak, type StreakInfo } from './streak';
 import { entryId, type Entry, type Habit } from './types';
 import { sortBurn, withGoal, type BurnEntry, type BurnSettings } from './burn';
 import type { JourneySettings } from './journey';
-import { withVersion, type ExtraFood, type NutritionPlan, type PlanDraft } from './fatloss';
+import { withVersion, type ExtraFood, type NutritionPlan, type PlanDraft, type SaveOptions } from './fatloss';
 import { sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 /** habitId → (date → entry) */
@@ -212,8 +212,8 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
 
   /** Saves a validated weekly plan as a new dated version (see withVersion). */
   const saveNutritionPlan = useCallback(
-    (draft: PlanDraft) => {
-      const plan: NutritionPlan = withVersion(nutrition.plan, draft, today);
+    (draft: PlanDraft, options?: SaveOptions) => {
+      const plan: NutritionPlan = withVersion(nutrition.plan, draft, today, options);
       setNutrition((n) => ({ ...n, plan }));
       void persist(db.putNutritionPlan(plan));
     },

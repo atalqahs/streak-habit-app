@@ -57,11 +57,14 @@ A theoretical, automatically calculated fat-loss equivalent for the current Satu
 (Kuwait time). Set up a weekly nutrition plan once — pick foods from the built-in library and enter
 grams (raw/cooked only where it applies) — and assign every weekday a template. Carb Cycling (off by
 default) allows two or three templates, each usable on any number of days. The plan repeats every
-week until edited; edits apply from the day they are saved and earlier days keep their plan.
+week until edited. A new plan counts from the day it is created; it can start on the current
+week's Saturday only if you confirm you followed it since then. Edits apply from the day they are
+saved, and earlier days keep their plan.
 
 For each elapsed day: BMR (Mifflin–St Jeor, male, 175 cm, age from 30 May 1997, weight from the
 Weight card on/before that day) × 1.2 (sedentary) + Burn Goal exercise − (planned food + extra
-food) = balance; ÷ 7.7 gives grams. Today is provisional; future days are never counted; each week
+food) = balance; ÷ 7.7 gives grams. Today's figure is a projection for the whole day ("Today's
+Projected Deficit"), shown separately from completed days and provisional until midnight; future days are never counted; each week
 starts at zero and previous weeks are listed separately. "+ Extra Food" adds a one-off item for a
 single date, from the library or as a custom snack (label calories, or 4-4-9 from all three macros).
 

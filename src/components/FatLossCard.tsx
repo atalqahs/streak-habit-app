@@ -33,6 +33,14 @@ const signedG = (n: number) => {
   return r > 0 ? `${r}` : r < 0 ? `−${Math.abs(r)}` : '0';
 };
 
+/** Today is unfinished, so its figure is a projection for the whole day — never "so far". */
+export const projectedText = (deficit: number) =>
+  deficit >= 0
+    ? `Today’s Projected Deficit: ${kcal(deficit)}`
+    : `Today’s Projected Surplus: ${kcal(-deficit)}`;
+
+const plusG = (n: number) => (Math.round(n) > 0 ? `+${signedG(n)}` : signedG(n));
+
 /** "1,234 kcal deficit" / "321 kcal surplus" */
 export const balanceText = (deficit: number) =>
   deficit >= 0 ? `${kcal(deficit)} deficit` : `${kcal(-deficit)} surplus`;
@@ -106,7 +114,11 @@ export const FatLossCard = memo(function FatLossCard({
         onClick={onDetails}
         aria-label={`${surplus ? 'Theoretical surplus equivalent' : 'Weekly estimated fat loss'}: ${grams(
           Math.abs(week.fatGrams),
-        )}, ${balanceText(week.netDeficit)} over ${week.counted} of 7 days. Show details`}
+        )}, ${balanceText(week.netDeficit)} over ${week.counted} of 7 days${
+          week.todayProjected
+            ? `, including today’s provisional projection of ${plusG(week.todayProjected.fatGrams)} g`
+            : ''
+        }. Show details`}
       >
         <p className="fat-eyebrow">
           {surplus ? 'Theoretical Surplus Equivalent' : 'Weekly Estimated Fat Loss'}
@@ -120,6 +132,13 @@ export const FatLossCard = memo(function FatLossCard({
           <span className="fat-side">{week.elapsed} of 7 days</span>
         </div>
         <p className="fat-sub">Estimated · {balanceText(week.netDeficit)} this week</p>
+        {week.todayProjected && (
+          <p className="fat-split">
+            {signedG(week.completed.fatGrams)} g completed days · {plusG(week.todayProjected.fatGrams)} g
+            today
+            <span className="fat-provisional"> (projected, provisional)</span>
+          </p>
+        )}
 
         <div className="fat-days" aria-hidden="true">
           {week.days.map((d) => (
@@ -134,7 +153,7 @@ export const FatLossCard = memo(function FatLossCard({
               ? todayDay.reason === 'no-weight'
                 ? 'Log a weight in the Weight card to estimate.'
                 : 'No plan for today.'
-              : `${todayDay.templateName} · ${balanceText(todayDay.deficit)} so far`}
+              : `${todayDay.templateName} · ${projectedText(todayDay.deficit)}`}
           </p>
         )}
         {missingWeight && todayDay?.reason !== 'no-weight' && (
@@ -226,12 +245,33 @@ function Details({ week, ix, today, currentWeight, onEditExtra }: DetailsProps) 
           <span className="stat-label">Days elapsed</span>
         </div>
       </div>
+      <dl className="info-list">
+        <div>
+          <dt>Completed days ({week.completed.days})</dt>
+          <dd>
+            {signedG(week.completed.fatGrams)} g · {balanceText(week.completed.deficit)}
+          </dd>
+        </div>
+        <div>
+          <dt>Today (projected, provisional)</dt>
+          <dd>
+            {week.todayProjected
+              ? `${plusG(week.todayProjected.fatGrams)} g · ${balanceText(week.todayProjected.deficit)}`
+              : 'Not estimated'}
+          </dd>
+        </div>
+        <div>
+          <dt>Week total</dt>
+          <dd>{signedG(week.fatGrams)} g</dd>
+        </div>
+      </dl>
       <p className="helper">
-        {formatWeekRange(week.start, today)} · Saturday–Friday, Kuwait time. Resets every Saturday. Only days
-        up to today count; today is provisional until midnight.
+        {formatWeekRange(week.start, today)} · Saturday–Friday, Kuwait time. Resets every Saturday. Future
+        days are never counted. Today’s figure is a projection for the whole day and becomes final after
+        midnight.
       </p>
 
-      <h3 className="group-title">Today · {DAY_NAMES[dow(today)]} (provisional)</h3>
+      <h3 className="group-title">Today · {DAY_NAMES[dow(today)]} · Projected (provisional)</h3>
       {t.status === 'unavailable' ? (
         <p className="helper">
           {t.reason === 'no-weight'
@@ -265,12 +305,12 @@ function Details({ week, ix, today, currentWeight, onEditExtra }: DetailsProps) 
             <dd>{kcal(t.tdee)}</dd>
           </div>
           <div>
-            <dt>Balance</dt>
-            <dd className={t.deficit < 0 ? 'surplus-text' : ''}>{balanceText(t.deficit)}</dd>
+            <dt>{t.deficit >= 0 ? 'Today’s Projected Deficit' : 'Today’s Projected Surplus'}</dt>
+            <dd className={t.deficit < 0 ? 'surplus-text' : ''}>{kcal(Math.abs(t.deficit))}</dd>
           </div>
           <div>
-            <dt>Fat equivalent</dt>
-            <dd>{signedG(t.fatGrams)} g</dd>
+            <dt>Projected fat equivalent</dt>
+            <dd>{plusG(t.fatGrams)} g</dd>
           </div>
           <div>
             <dt>Macros</dt>
@@ -292,7 +332,7 @@ function Details({ week, ix, today, currentWeight, onEditExtra }: DetailsProps) 
         </div>
         {week.days.map((d) => {
           const counted = d.status === 'complete' || d.status === 'today';
-          return (
+          const row = (
             <div key={d.date} className={`fat-row ${d.status}`} role="row">
               <span role="cell">
                 {SHORT[dow(d.date)]}
@@ -322,9 +362,31 @@ function Details({ week, ix, today, currentWeight, onEditExtra }: DetailsProps) 
               </span>
             </div>
           );
+          // Completed days and today's projection are shown as separate groups.
+          if (d.date !== today) return row;
+          return [
+            week.completed.days > 0 && (
+              <div key="completed-total" className="fat-row subtotal" role="row">
+                <span role="cell">Completed</span>
+                <span role="cell" />
+                <span role="cell" />
+                <span role="cell" className={week.completed.deficit < 0 ? 'surplus-text' : ''}>
+                  {`${week.completed.deficit < 0 ? '−' : ''}${Math.abs(Math.round(week.completed.deficit)).toLocaleString('en-US')}`}
+                </span>
+                <span role="cell">{signedG(week.completed.fatGrams)} g</span>
+              </div>
+            ),
+            <div key="today-label" className="fat-row group-label" role="row">
+              <span role="cell">Today — projected, provisional</span>
+            </div>,
+            row,
+          ];
         })}
       </div>
-      <p className="helper">kcal. * Today, provisional. – No exercise logged in Burn Goal (counted as 0).</p>
+      <p className="helper">
+        kcal. * Today: a projection for the whole day, final after midnight. – No exercise logged in Burn Goal
+        (counted as 0).
+      </p>
 
       <h3 className="group-title">Macros This Week</h3>
       <p className="fat-macros">

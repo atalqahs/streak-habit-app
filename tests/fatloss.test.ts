@@ -184,8 +184,8 @@ describe('weekly plan validation', () => {
     expect(validateDraft(single([item('oats', 'dry', 0)])).messages.join()).toMatch(/greater than 0/);
   });
 
-  it('first plan applies from Saturday; edits from today; same-day edit replaces', () => {
-    let plan = withVersion(null, single(), TODAY);
+  it('confirmed first plan from Saturday; edits from today; same-day edit replaces', () => {
+    let plan = withVersion(null, single(), TODAY, { sinceWeekStart: true });
     expect(plan.versions.map((v) => v.from)).toEqual([SAT]);
     plan = withVersion(plan, single(HIGH), TODAY);
     expect(plan.versions.map((v) => v.from)).toEqual([SAT, TODAY]);
@@ -194,10 +194,86 @@ describe('weekly plan validation', () => {
     expect(templateTotals(planOn(plan, TODAY)!.templates[0]).kcal).toBeCloseTo(1469.78, 2);
     // Earlier days keep the first version.
     expect(planOn(plan, '2026-10-27')!.from).toBe(SAT);
+    // Once a plan exists, the Saturday option is ignored: edits never backdate.
+    plan = withVersion(plan, single(HIGH), '2026-10-29', { sinceWeekStart: true });
+    expect(plan.versions.map((v) => v.from)).toEqual([SAT, TODAY, '2026-10-29']);
+  });
+
+  // Regression: the first plan was silently backdated to the previous Saturday.
+  it('first plan starts on the day it is created unless adherence is confirmed', () => {
+    const plan = withVersion(null, single(), TODAY);
+    expect(plan.versions.map((v) => v.from)).toEqual([TODAY]);
+    const ix = indexSources({ plan, weights: [weightAt('2026-10-01', 86.4)], burns: [], extras: [] });
+    const w = weekBalance(ix, SAT, TODAY);
+    // Sat–Tue are not estimated (no confirmed plan); only today counts.
+    expect(w.days.slice(0, 4).map((d) => d.status)).toEqual([
+      'unavailable',
+      'unavailable',
+      'unavailable',
+      'unavailable',
+    ]);
+    expect(w.days.slice(0, 4).every((d) => d.reason === 'no-plan' && d.deficit === 0)).toBe(true);
+    expect(w.counted).toBe(1);
+    expect(w.netDeficit).toBeCloseTo(w.days[4].deficit, 9);
+    // Explicit confirmation counts Saturday onward.
+    const confirmed = withVersion(null, single(), TODAY, { sinceWeekStart: true });
+    const wc = weekBalance(
+      indexSources({ plan: confirmed, weights: [weightAt('2026-10-01', 86.4)], burns: [], extras: [] }),
+      SAT,
+      TODAY,
+    );
+    expect(wc.counted).toBe(5);
+    // On a Saturday both choices are the same day.
+    expect(withVersion(null, single(), SAT, { sinceWeekStart: true }).versions[0].from).toBe(SAT);
+    // Weekly repetition is unaffected: next week's days all use the plan.
+    expect(dayBalance(ix, '2026-11-01', '2026-11-06').templateName).toBe('Daily');
+  });
+
+  // Regression: today's figure is a whole-day projection, kept apart from completed days.
+  it('separates completed days from today’s projected, provisional contribution', () => {
+    const plan = withVersion(null, single(), TODAY, { sinceWeekStart: true });
+    const ix = indexSources({
+      plan,
+      weights: [weightAt('2026-10-01', 86.4)],
+      burns: [burn(TODAY, 300)],
+      extras: [snack(TODAY, 120)],
+    });
+    const w = weekBalance(ix, SAT, TODAY);
+    const todayDay = w.days[4];
+    expect(todayDay.status).toBe('today');
+    expect(w.completed.days).toBe(4);
+    expect(w.completed.deficit).toBeCloseTo(
+      w.days.slice(0, 4).reduce((s, d) => s + d.deficit, 0),
+      9,
+    );
+    expect(w.todayProjected!.deficit).toBeCloseTo(todayDay.deficit, 9);
+    // Projection = full day's sedentary expenditure + logged exercise − full planned intake − logged extras.
+    expect(w.todayProjected!.deficit).toBeCloseTo(2181.3 + 300 - 1469.78 - 120, 6);
+    expect(w.netDeficit).toBeCloseTo(w.completed.deficit + w.todayProjected!.deficit, 9);
+    expect(w.fatGrams).toBeCloseTo(w.completed.fatGrams + w.todayProjected!.fatGrams, 9);
+    // Future days are excluded from every part.
+    expect(w.days.slice(5).every((d) => d.status === 'future' && d.deficit === 0)).toBe(true);
+    // Still responsive: more exercise today raises only the projection.
+    const more = weekBalance(
+      indexSources({
+        plan,
+        weights: [weightAt('2026-10-01', 86.4)],
+        burns: [burn(TODAY, 500)],
+        extras: [snack(TODAY, 120)],
+      }),
+      SAT,
+      TODAY,
+    );
+    expect(more.completed.deficit).toBeCloseTo(w.completed.deficit, 9);
+    expect(more.todayProjected!.deficit - w.todayProjected!.deficit).toBeCloseTo(200, 9);
+    // A completed past week has no projection.
+    expect(weekBalance(ix, SAT, '2026-11-02').todayProjected).toBeNull();
   });
 
   it('repeats automatically every week until changed', () => {
-    const plan = withVersion(null, cycling(['L', 'L', 'H', 'L', 'L', 'H', 'L']), TODAY);
+    const plan = withVersion(null, cycling(['L', 'L', 'H', 'L', 'L', 'H', 'L']), TODAY, {
+      sinceWeekStart: true,
+    });
     const ix = indexSources({ plan, weights: [weightAt('2026-10-01', 86.4)], burns: [], extras: [] });
     expect(dayBalance(ix, '2026-11-02', '2026-11-30').templateName).toBe('Low Carb'); // Monday next week
     expect(dayBalance(ix, '2026-11-03', '2026-11-30').templateName).toBe('High Carb'); // Tuesday next week
@@ -247,7 +323,8 @@ describe('custom snack energy', () => {
 /* ---------- energy balance ---------- */
 
 describe('energy balance', () => {
-  const plan: NutritionPlan = withVersion(null, single(), TODAY);
+  // Confirmed since Saturday so these scenarios cover the whole week.
+  const plan: NutritionPlan = withVersion(null, single(), TODAY, { sinceWeekStart: true });
   const weights = [weightAt('2026-10-01', 86.4)];
 
   it('uses Mifflin–St Jeor × 1.2 plus recorded exercise, with age from the birth date', () => {
