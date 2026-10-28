@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BackupError, createBackup, parseBackup } from '../src/lib/backup';
+import { withVersion } from '../src/lib/fatloss';
 import type { Habit } from '../src/lib/types';
 
 const habit: Habit = {
@@ -49,8 +50,42 @@ const journey = {
   updatedAt: 2,
 };
 
+const plan = withVersion(
+  null,
+  {
+    carbCycling: true,
+    templates: [
+      {
+        id: 'L',
+        name: 'Low Carb',
+        items: [{ id: 'i1', foodId: 'chicken-thigh', variantId: 'cooked', grams: 400 }],
+      },
+      {
+        id: 'H',
+        name: 'High Carb',
+        items: [{ id: 'i2', foodId: 'white-rice', variantId: 'cooked', grams: 420 }],
+      },
+    ],
+    days: ['L', 'H', 'L', 'L', 'H', 'L', 'L'],
+  },
+  '2026-10-28',
+);
+const extra = {
+  id: 'x1',
+  date: '2026-10-29',
+  name: 'Snack',
+  kind: 'custom' as const,
+  kcal: 250,
+  kcalSource: 'macros' as const,
+  protein: 10,
+  carbs: 30,
+  fat: 10,
+  recordedAt: 1,
+};
+const nutrition = { plan, extras: [extra] };
+
 const text = (overrides: Record<string, unknown> = {}) =>
-  JSON.stringify({ ...createBackup([habit], [entry], weight, burn, journey), ...overrides });
+  JSON.stringify({ ...createBackup([habit], [entry], weight, burn, journey, nutrition), ...overrides });
 
 describe('backup', () => {
   it('round-trips an export including weight data, sorted chronologically', () => {
@@ -60,6 +95,7 @@ describe('backup', () => {
       weight: sortedWeight,
       burn: sortedBurn,
       journey,
+      nutrition,
     });
   });
 
@@ -77,6 +113,7 @@ describe('backup', () => {
       weight: undefined,
       burn: undefined,
       journey: undefined,
+      nutrition: undefined,
     });
   });
 
@@ -108,6 +145,30 @@ describe('backup', () => {
     const parsed = parseBackup(v3);
     expect(parsed.burn).toEqual(sortedBurn);
     expect(parsed.journey).toBeUndefined();
+  });
+
+  it('imports v4 backups without touching nutrition data', () => {
+    const v4 = JSON.parse(text());
+    v4.version = 4;
+    delete v4.nutrition;
+    const parsed = parseBackup(JSON.stringify(v4));
+    expect(parsed.journey).toEqual(journey);
+    expect(parsed.nutrition).toBeUndefined();
+  });
+
+  it('keeps unknown snack macros unknown through a round trip', () => {
+    const t = text({
+      nutrition: {
+        plan: null,
+        extras: [{ ...extra, protein: null, carbs: null, fat: null, kcalSource: 'label' }],
+      },
+    });
+    expect(parseBackup(t).nutrition!.extras[0]).toMatchObject({
+      kcal: 250,
+      protein: null,
+      carbs: null,
+      fat: null,
+    });
   });
 
   it('a v4 backup without a journey clears it on import', () => {
@@ -183,6 +244,75 @@ describe('backup', () => {
     ['malformed burn', text({ burn: 7 }), 'Calorie burn data'],
     ['journey end before start', text({ journey: { ...journey, end: '2026-09-01' } }), 'after its start'],
     ['journey bad date', text({ journey: { ...journey, start: '2026-02-31' } }), 'Journey dates'],
+    [
+      'plan with a missing weekday',
+      text({
+        nutrition: {
+          ...nutrition,
+          plan: { ...plan, versions: [{ ...plan.versions[0], days: ['L', 'H', 'L', 'L', 'H', 'L'] }] },
+        },
+      }),
+      'exactly one template',
+    ],
+    [
+      'plan weekday with two templates',
+      text({
+        nutrition: {
+          ...nutrition,
+          plan: {
+            ...plan,
+            versions: [{ ...plan.versions[0], days: [['L', 'H'], 'H', 'L', 'L', 'H', 'L', 'L'] }],
+          },
+        },
+      }),
+      'exactly one template',
+    ],
+    [
+      'plan with an unknown template',
+      text({
+        nutrition: {
+          ...nutrition,
+          plan: { ...plan, versions: [{ ...plan.versions[0], days: ['Z', 'H', 'L', 'L', 'H', 'L', 'L'] }] },
+        },
+      }),
+      'exactly one template',
+    ],
+    [
+      'plan with four templates',
+      text({
+        nutrition: {
+          ...nutrition,
+          plan: {
+            ...plan,
+            versions: [
+              {
+                ...plan.versions[0],
+                templates: [...plan.versions[0].templates, ...plan.versions[0].templates].map((t, i) => ({
+                  ...t,
+                  id: `t${i}`,
+                })),
+              },
+            ],
+          },
+        },
+      }),
+      'number of templates',
+    ],
+    [
+      'negative snack calories',
+      text({ nutrition: { ...nutrition, extras: [{ ...extra, kcal: -5 }] } }),
+      'calories must be 0',
+    ],
+    [
+      'negative snack macro',
+      text({ nutrition: { ...nutrition, extras: [{ ...extra, fat: -1 }] } }),
+      'macros must be 0',
+    ],
+    [
+      'duplicate extra food',
+      text({ nutrition: { ...nutrition, extras: [extra, extra] } }),
+      'duplicate extra',
+    ],
   ])('rejects %s', (_name, input, message) => {
     expect(() => parseBackup(input)).toThrow(BackupError);
     expect(() => parseBackup(input)).toThrow(message);

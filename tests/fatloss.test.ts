@@ -1,0 +1,382 @@
+import { describe, expect, it } from 'vitest';
+import type { BurnEntry } from '../src/lib/burn';
+import {
+  ageOn,
+  bmrMale,
+  dayBalance,
+  fatWeekDays,
+  fatWeekStart,
+  indexSources,
+  parseOptional,
+  pastWeeks,
+  planOn,
+  resolveCustom,
+  templateTotals,
+  validateDraft,
+  weekBalance,
+  withVersion,
+  type ExtraFood,
+  type NutritionPlan,
+  type PlanDraft,
+} from '../src/lib/fatloss';
+import { FOODS, foodById, scale, sum, variantOf, type Per100 } from '../src/lib/foods';
+import type { WeightEntry } from '../src/lib/weight';
+
+/* ---------- helpers ---------- */
+
+let n = 0;
+const uid = () => `id${++n}`;
+const item = (foodId: string, variantId: string, grams: number) => ({ id: uid(), foodId, variantId, grams });
+const LOW = [
+  item('chicken-thigh', 'cooked', 400),
+  item('critical-whey-choc-30g', 'powder', 20),
+  item('oats', 'dry', 50),
+  item('peanut-butter', 'as-is', 16),
+  item('white-rice', 'cooked', 300),
+];
+const HIGH = [
+  item('chicken-thigh', 'cooked', 400),
+  item('critical-whey-choc-30g', 'powder', 20),
+  item('oats', 'dry', 70),
+  item('peanut-butter', 'as-is', 16),
+  item('white-rice', 'cooked', 420),
+];
+const all = (id: string) => [id, id, id, id, id, id, id];
+const single = (items = LOW): PlanDraft => ({
+  carbCycling: false,
+  templates: [{ id: 'A', name: 'Daily', items }],
+  days: all('A'),
+});
+// JS weekday order: Sun Mon Tue Wed Thu Fri Sat
+const cycling = (days: string[], three = false): PlanDraft => ({
+  carbCycling: true,
+  templates: [
+    { id: 'L', name: 'Low Carb', items: LOW },
+    { id: 'H', name: 'High Carb', items: HIGH },
+    ...(three ? [{ id: 'M', name: 'Medium Carb', items: LOW.slice(0, 3) }] : []),
+  ],
+  days,
+});
+const weightAt = (date: string, value: number, t = 0): WeightEntry => ({
+  id: uid(),
+  date,
+  value,
+  recordedAt: t || ++n,
+});
+const burn = (date: string, kcal: number): BurnEntry => ({ id: uid(), date, kcal, recordedAt: ++n });
+const snack = (
+  date: string,
+  kcal: number,
+  p: number | null = null,
+  c: number | null = null,
+  f: number | null = null,
+): ExtraFood => ({
+  id: uid(),
+  date,
+  name: 'Snack',
+  kind: 'custom',
+  kcal,
+  kcalSource: 'label',
+  protein: p,
+  carbs: c,
+  fat: f,
+  recordedAt: ++n,
+});
+const r0 = (x: number) => Math.round(x);
+
+// Week of Sat Oct 24 – Fri Oct 30, 2026. Today = Wed Oct 28.
+const SAT = '2026-10-24';
+const THU = '2026-10-29';
+const TODAY = '2026-10-28';
+
+/* ---------- food library ---------- */
+
+describe('food library', () => {
+  it('is preloaded with sourced, preparation-specific entries', () => {
+    expect(FOODS.length).toBeGreaterThanOrEqual(15);
+    for (const f of FOODS) for (const v of f.variants) expect(v.source.length).toBeGreaterThan(10);
+    expect(variantOf('chicken-thigh', 'cooked')!.kcal).toBe(179);
+    expect(variantOf('chicken-thigh', 'raw')!.kcal).toBe(121);
+    expect(variantOf('white-rice', 'cooked')!.kcal).toBe(130);
+    expect(variantOf('oats', 'dry')!.kcal).toBe(389);
+  });
+
+  it('uses the preparation chosen: 400 g cooked vs raw thigh', () => {
+    expect(r0(scale(variantOf('chicken-thigh', 'cooked')!, 400).kcal)).toBe(716);
+    expect(r0(scale(variantOf('chicken-thigh', 'raw')!, 400).kcal)).toBe(484);
+  });
+
+  it('20 g whey is 20 g of powder (14 g protein), not 20 g protein', () => {
+    const w = scale(variantOf('critical-whey-choc-30g', 'powder')!, 20);
+    expect(w.protein).toBeCloseTo(14.02, 2);
+    expect(w.kcal).toBeCloseTo(73.6, 2);
+  });
+
+  it('shows no cooking selector for peanut butter, whey or oats', () => {
+    for (const id of ['peanut-butter', 'critical-whey-choc-30g', 'oats'])
+      expect(foodById(id)!.variants).toHaveLength(1);
+    expect(foodById('chicken-breast')!.variants.map((v) => v.label)).toEqual(['Cooked', 'Raw']);
+    expect(foodById('white-rice')!.variants.map((v) => v.label)).toEqual(['Cooked', 'Dry']);
+  });
+
+  it('different fish use their own values', () => {
+    const fish = ['salmon-atlantic-farmed', 'tilapia', 'cod-atlantic', 'grouper', 'sea-bass'].map(
+      (id) => variantOf(id, 'cooked')!.kcal,
+    );
+    expect(new Set(fish).size).toBe(fish.length);
+  });
+
+  it('reproduces the spec totals from the spec reference table (math check)', () => {
+    const ref: Record<string, Per100> = {
+      thigh: { kcal: 209, protein: 25.94, carbs: 0, fat: 10.88 },
+      whey: { kcal: 368, protein: 70.1, carbs: 7.3, fat: 4.9 },
+      oats: { kcal: 389, protein: 16.89, carbs: 66.27, fat: 6.9 },
+      pb: { kcal: 588, protein: 25.09, carbs: 19.56, fat: 50.39 },
+      rice: { kcal: 130, protein: 2.69, carbs: 28.17, fat: 0.28 },
+    };
+    const total = (g: number[]) =>
+      sum(['thigh', 'whey', 'oats', 'pb', 'rice'].map((k, i) => scale(ref[k], g[i])));
+    const low = total([400, 20, 50, 16, 300]);
+    const high = total([400, 20, 70, 16, 420]);
+    expect([r0(low.kcal), r0(low.protein), r0(low.carbs), r0(low.fat)]).toEqual([1588, 138, 122, 57]);
+    expect([r0(high.kcal), r0(high.protein), r0(high.carbs), r0(high.fat)]).toEqual([1822, 145, 169, 59]);
+  });
+
+  it('verified-library totals for the example templates', () => {
+    const plan = withVersion(null, cycling(['L', 'L', 'L', 'L', 'H', 'L', 'L']), TODAY);
+    const [low, high] = plan.versions[0].templates.map(templateTotals);
+    expect([r0(low.kcal), r0(low.protein), r0(low.carbs), r0(low.fat)]).toEqual([1470, 133, 123, 46]);
+    expect([r0(high.kcal), r0(high.protein), r0(high.carbs), r0(high.fat)]).toEqual([1704, 140, 170, 48]);
+  });
+});
+
+/* ---------- weekly plan ---------- */
+
+describe('weekly plan validation', () => {
+  const ok = (d: PlanDraft) => {
+    const v = validateDraft(d);
+    return v.missingDays.length === 0 && v.messages.length === 0;
+  };
+  it('accepts valid distributions', () => {
+    expect(ok(single())).toBe(true); // one template, all 7 days
+    expect(ok(cycling(['L', 'H', 'L', 'L', 'H', 'L', 'L']))).toBe(true); // five Low, two High
+    expect(ok(cycling(['L', 'H', 'L', 'L', 'H', 'M', 'L'], true))).toBe(true); // three templates
+    expect(ok(cycling(['L', 'L', 'H', 'L', 'L', 'H', 'L']))).toBe(true); // Low-Low-High repeating
+    expect(ok(cycling(all('L')))).toBe(true); // one template on all days, others unused
+  });
+
+  it('rejects an incomplete week and names the missing day', () => {
+    const d = single();
+    d.days[5] = null; // Friday
+    const v = validateDraft(d);
+    expect(v.missingDays).toEqual([5]);
+    const six = cycling(['L', 'H', 'L', 'L', 'H', 'L', 'L']);
+    six.days[6] = null; // Saturday
+    expect(validateDraft(six).missingDays).toEqual([6]);
+  });
+
+  it('enforces template counts and contents', () => {
+    expect(validateDraft({ ...single(), carbCycling: true }).messages.join()).toMatch(/two or three/);
+    const four = cycling(all('L'), true);
+    four.templates.push({ id: 'X', name: 'X', items: LOW });
+    expect(validateDraft(four).messages.join()).toMatch(/two or three/);
+    expect(validateDraft(single([])).messages.join()).toMatch(/no foods/);
+    expect(validateDraft(single([item('oats', 'dry', 0)])).messages.join()).toMatch(/greater than 0/);
+  });
+
+  it('first plan applies from Saturday; edits from today; same-day edit replaces', () => {
+    let plan = withVersion(null, single(), TODAY);
+    expect(plan.versions.map((v) => v.from)).toEqual([SAT]);
+    plan = withVersion(plan, single(HIGH), TODAY);
+    expect(plan.versions.map((v) => v.from)).toEqual([SAT, TODAY]);
+    plan = withVersion(plan, single(LOW), TODAY);
+    expect(plan.versions.map((v) => v.from)).toEqual([SAT, TODAY]);
+    expect(templateTotals(planOn(plan, TODAY)!.templates[0]).kcal).toBeCloseTo(1469.78, 2);
+    // Earlier days keep the first version.
+    expect(planOn(plan, '2026-10-27')!.from).toBe(SAT);
+  });
+
+  it('repeats automatically every week until changed', () => {
+    const plan = withVersion(null, cycling(['L', 'L', 'H', 'L', 'L', 'H', 'L']), TODAY);
+    const ix = indexSources({ plan, weights: [weightAt('2026-10-01', 86.4)], burns: [], extras: [] });
+    expect(dayBalance(ix, '2026-11-02', '2026-11-30').templateName).toBe('Low Carb'); // Monday next week
+    expect(dayBalance(ix, '2026-11-03', '2026-11-30').templateName).toBe('High Carb'); // Tuesday next week
+    expect(dayBalance(ix, '2026-11-27', '2026-11-30').templateName).toBe('High Carb'); // Friday, a month later
+    expect(dayBalance(ix, '2026-11-21', '2026-11-30').templateName).toBe('Low Carb'); // Saturday
+  });
+
+  it('snapshots values so library updates never rewrite history', () => {
+    const plan = withVersion(null, single(), TODAY);
+    expect(plan.versions[0].templates[0].items[0].snapshot).toMatchObject({ kcal: 179, variant: 'Cooked' });
+    expect(plan.versions[0].libraryVersion).toBe(1);
+  });
+});
+
+/* ---------- custom snacks ---------- */
+
+describe('custom snack energy', () => {
+  it('A: macros only → 4-4-9 = 250 kcal', () => {
+    expect(resolveCustom(null, 10, 30, 10)).toMatchObject({ kcal: 250, kcalSource: 'macros' });
+  });
+  it('B: calories only → accepted, macros stay unknown', () => {
+    expect(resolveCustom(250, null, null, null)).toMatchObject({
+      kcal: 250,
+      kcalSource: 'label',
+      macroKcal: null,
+    });
+  });
+  it('C: label calories win over a differing 4-4-9 estimate, never added', () => {
+    const r = resolveCustom(240, 10, 30, 10);
+    expect(r).toMatchObject({ kcal: 240, kcalSource: 'label', macroKcal: 250, mismatch: false });
+    expect(resolveCustom(180, 10, 30, 10).mismatch).toBe(true);
+  });
+  it('does not invent totals from partial macros; zero is not unknown', () => {
+    expect(resolveCustom(null, 10, null, 5).kcal).toBeNull();
+    expect(resolveCustom(null, 0, 0, 0)).toMatchObject({ kcal: 0, kcalSource: 'macros' });
+  });
+  it('parses decimals, rejects negatives and junk', () => {
+    expect(parseOptional('')).toEqual({ value: null });
+    expect(parseOptional('12,5')).toEqual({ value: 12.5 });
+    expect(parseOptional('0')).toEqual({ value: 0 });
+    expect(parseOptional('-1').error).toBeTruthy();
+    expect(parseOptional('abc').error).toBeTruthy();
+    expect(parseOptional('NaN').error).toBeTruthy();
+  });
+});
+
+/* ---------- energy balance ---------- */
+
+describe('energy balance', () => {
+  const plan: NutritionPlan = withVersion(null, single(), TODAY);
+  const weights = [weightAt('2026-10-01', 86.4)];
+
+  it('uses Mifflin–St Jeor × 1.2 plus recorded exercise, with age from the birth date', () => {
+    expect(ageOn('1997-05-30', TODAY)).toBe(29);
+    expect(ageOn('1997-05-30', '2027-05-29')).toBe(29);
+    expect(ageOn('1997-05-30', '2027-05-30')).toBe(30);
+    const ix = indexSources({ plan, weights, burns: [burn(TODAY, 350)], extras: [] });
+    const d = dayBalance(ix, TODAY, TODAY);
+    expect(d.bmr).toBeCloseTo(bmrMale(86.4, 175, 29), 6);
+    expect(d.bmr).toBeCloseTo(1817.75, 6);
+    expect(d.sedentary).toBeCloseTo(2181.3, 6);
+    expect(d.tdee).toBeCloseTo(2531.3, 6);
+    expect(d.deficit).toBeCloseTo(2531.3 - 1469.78, 2);
+    expect(d.fatGrams).toBeCloseTo(((2531.3 - 1469.78) / 7700) * 1000, 4);
+    expect(d.status).toBe('today');
+  });
+
+  it('D/E/F: a Thursday snack lowers that day by exactly its calories, only that day', () => {
+    const today = '2026-10-30'; // Friday, so Thursday is complete
+    const base = indexSources({ plan, weights, burns: [], extras: [] });
+    const s = snack(THU, 250);
+    const withSnack = indexSources({ plan, weights, burns: [], extras: [s] });
+    const b = dayBalance(base, THU, today);
+    const w = dayBalance(withSnack, THU, today);
+    expect(w.intakeKcal - b.intakeKcal).toBeCloseTo(250, 9);
+    expect(b.deficit - w.deficit).toBeCloseTo(250, 9);
+    const wb = weekBalance(base, SAT, today);
+    const ws = weekBalance(withSnack, SAT, today);
+    expect(wb.netDeficit - ws.netDeficit).toBeCloseTo(250, 9);
+    expect(wb.fatGrams - ws.fatGrams).toBeCloseTo(250 / 7.7, 9);
+    // E: removing it restores the totals; the template is unchanged.
+    expect(
+      weekBalance(indexSources({ plan, weights, burns: [], extras: [] }), SAT, today).netDeficit,
+    ).toBeCloseTo(wb.netDeficit, 9);
+    expect(templateTotals(plan.versions[0].templates[0]).kcal).toBeCloseTo(1469.78, 2);
+    // F: next Thursday has no snack.
+    expect(dayBalance(withSnack, '2026-11-05', '2026-11-06').extraKcal).toBe(0);
+  });
+
+  it('reads Burn Goal records: explicit 0, edits and deletions', () => {
+    const at = (burns: BurnEntry[]) =>
+      dayBalance(indexSources({ plan, weights, burns, extras: [] }), '2026-10-25', TODAY);
+    expect(at([])).toMatchObject({ exerciseKcal: 0, exerciseLogged: false });
+    expect(at([burn('2026-10-25', 0)])).toMatchObject({ exerciseKcal: 0, exerciseLogged: true });
+    const d170 = at([burn('2026-10-25', 170)]);
+    const d350 = at([burn('2026-10-25', 350)]);
+    expect(d350.deficit - d170.deficit).toBeCloseTo(180, 9);
+    expect(at([burn('2026-10-25', 170), burn('2026-10-25', 100)]).exerciseKcal).toBe(270); // summed, once each
+  });
+
+  it('Saturday–Friday week: future excluded, today provisional, surpluses offset', () => {
+    expect(fatWeekStart(TODAY)).toBe(SAT);
+    expect(fatWeekStart(SAT)).toBe(SAT);
+    expect(fatWeekStart('2026-10-30')).toBe(SAT); // Friday
+    expect(fatWeekStart('2026-10-31')).toBe('2026-10-31'); // next Saturday starts a new week
+    expect(fatWeekDays(SAT).at(-1)).toBe('2026-10-30');
+    const ix = indexSources({ plan, weights, burns: [], extras: [snack('2026-10-25', 3000)] });
+    const w = weekBalance(ix, SAT, TODAY);
+    expect(w.days.map((d) => d.status)).toEqual([
+      'complete',
+      'complete',
+      'complete',
+      'complete',
+      'today',
+      'future',
+      'future',
+    ]);
+    expect(w.counted).toBe(5);
+    expect(w.elapsed).toBe(5);
+    const sumCounted = w.days.slice(0, 5).reduce((s, d) => s + d.deficit, 0);
+    expect(w.netDeficit).toBeCloseTo(sumCounted, 9);
+    expect(w.days[1].deficit).toBeLessThan(0); // Sunday surplus
+    expect(w.days[5].deficit).toBe(0);
+  });
+
+  it('a net-surplus week is negative, never shown as fat loss', () => {
+    const ix = indexSources({ plan, weights, burns: [], extras: [snack(SAT, 9000)] });
+    expect(weekBalance(ix, SAT, TODAY).fatGrams).toBeLessThan(0);
+  });
+
+  it('a new Saturday starts from zero; previous weeks stay separate', () => {
+    const ix = indexSources({ plan, weights, burns: [], extras: [] });
+    const sat = weekBalance(ix, fatWeekStart('2026-10-31'), '2026-10-31');
+    expect(sat.counted).toBe(1);
+    expect(sat.netDeficit).toBeCloseTo(sat.days[0].deficit, 9);
+    const past = pastWeeks(ix, '2026-11-13'); // Friday
+    expect(past.map((w) => w.start)).toEqual(['2026-10-31', SAT]);
+    expect(pastWeeks(ix, '2026-11-14').map((w) => w.start)).toEqual(['2026-11-07', '2026-10-31', SAT]);
+  });
+
+  it('historical days keep their own weight; new weights apply going forward', () => {
+    const ix = indexSources({
+      plan,
+      weights: [weightAt('2026-10-01', 90), weightAt(TODAY, 86)],
+      burns: [],
+      extras: [],
+    });
+    expect(dayBalance(ix, '2026-10-27', TODAY).weightKg).toBe(90);
+    expect(dayBalance(ix, TODAY, TODAY).weightKg).toBe(86);
+    // Before the first weigh-in the first logged weight is used.
+    expect(
+      dayBalance(indexSources({ plan, weights: [weightAt(TODAY, 86)], burns: [], extras: [] }), SAT, TODAY)
+        .weightKg,
+    ).toBe(86);
+  });
+
+  it('days without a plan or a weight are excluded, not guessed', () => {
+    const none = indexSources({ plan, weights: [], burns: [], extras: [] });
+    expect(dayBalance(none, TODAY, TODAY)).toMatchObject({
+      status: 'unavailable',
+      reason: 'no-weight',
+      deficit: 0,
+    });
+    const before = indexSources({ plan, weights, burns: [], extras: [] });
+    expect(dayBalance(before, '2026-10-20', TODAY)).toMatchObject({
+      status: 'unavailable',
+      reason: 'no-plan',
+    });
+  });
+
+  it('macros include known snack macros and count unknowns', () => {
+    const ix = indexSources({
+      plan,
+      weights,
+      burns: [],
+      extras: [snack(TODAY, 250, 10, 30, 10), snack(TODAY, 100)],
+    });
+    const d = dayBalance(ix, TODAY, TODAY);
+    expect(d.macros.protein).toBeCloseTo(templateTotals(plan.versions[0].templates[0]).protein + 10, 9);
+    expect(d.macros.unknown).toBe(1);
+  });
+});

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { createBackup, parseBackup, BackupError } from '../lib/backup';
 import { todayKey } from '../lib/dates';
-import type { BurnData, WeightData } from '../lib/db';
+import type { BurnData, NutritionData, WeightData } from '../lib/db';
 import type { JourneySettings } from '../lib/journey';
 import type { Entry, Habit } from '../lib/types';
 import { ChevronDown, ChevronRight, ChevronUp, Download, Reorder, Upload } from './icons';
@@ -13,12 +13,14 @@ interface SettingsProps {
   weight: WeightData;
   burn: BurnData;
   journey: JourneySettings | null;
+  nutrition: NutritionData;
   onImport: (
     habits: Habit[],
     entries: Entry[],
     weight?: WeightData,
     burn?: BurnData,
     journey?: JourneySettings | null,
+    nutrition?: NutritionData,
   ) => Promise<void>;
   onReorder: () => void;
   notify: (message: string) => void;
@@ -54,7 +56,17 @@ async function shareOrDownload(file: File): Promise<'shared' | 'downloaded' | 'c
   return 'downloaded';
 }
 
-function Settings({ habits, getEntries, weight, burn, journey, onImport, onReorder, notify }: SettingsProps) {
+function Settings({
+  habits,
+  getEntries,
+  weight,
+  burn,
+  journey,
+  nutrition,
+  onImport,
+  onReorder,
+  notify,
+}: SettingsProps) {
   const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -62,7 +74,11 @@ function Settings({ habits, getEntries, weight, burn, journey, onImport, onReord
 
   const exportBackup = async () => {
     setError('');
-    const json = JSON.stringify(createBackup(habits, getEntries(), weight, burn, journey), null, 1);
+    const json = JSON.stringify(
+      createBackup(habits, getEntries(), weight, burn, journey, nutrition),
+      null,
+      1,
+    );
     const file = new File([json], `habits-backup-${todayKey()}.json`, { type: 'application/json' });
     const result = await shareOrDownload(file);
     if (result !== 'cancelled') notify('Backup exported');
@@ -87,12 +103,15 @@ function Settings({ habits, getEntries, weight, burn, journey, onImport, onReord
             ? data.journey
               ? ` Your journey is replaced with “${data.journey.name}”.`
               : ' Your current journey is cleared.'
-            : ' This backup has no journey, so your current journey is kept.'),
+            : ' This backup has no journey, so your current journey is kept.') +
+          (data.nutrition
+            ? ` Your nutrition plan and ${data.nutrition.extras.length} extra food entr${data.nutrition.extras.length === 1 ? 'y are' : 'ies are'} replaced.`
+            : ' This backup has no nutrition plan, so your current plan and extra foods are kept.'),
         confirmLabel: 'Replace',
         destructive: true,
       });
       if (!ok) return;
-      await onImport(data.habits, data.entries, data.weight, data.burn, data.journey);
+      await onImport(data.habits, data.entries, data.weight, data.burn, data.journey, data.nutrition);
       notify('Backup restored');
     } catch (err) {
       setError(

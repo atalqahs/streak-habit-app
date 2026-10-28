@@ -58,3 +58,6 @@ fit a dark, single-screen iPhone utility, so only the matching parts were kept (
   Calorie input uses `inputmode="numeric" pattern="[0-9]*"`; no preset amounts.
 - My Journey: 10px meter in `--journey` (teal) with 25/50/75% milestone ticks; large remaining-days
   number; completion shows a teal check + "Journey Complete". No interactive controls besides settings.
+- Weekly Fat Loss: 40px grams in `--weight-down` (green; `--weight-up` amber and "+" for a theoretical
+  surplus). Seven-day diverging bars (deficit up, surplus down) with signed values; today striped and
+  outlined (provisional); future days empty. No targets, percentages or progress bars.

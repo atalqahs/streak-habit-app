@@ -5,6 +5,7 @@ import { computeStreak, type StreakInfo } from './streak';
 import { entryId, type Entry, type Habit } from './types';
 import { sortBurn, withGoal, type BurnEntry, type BurnSettings } from './burn';
 import type { JourneySettings } from './journey';
+import { withVersion, type ExtraFood, type NutritionPlan, type PlanDraft } from './fatloss';
 import { sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 /** habitId → (date → entry) */
@@ -51,6 +52,7 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
   const [weight, setWeight] = useState<db.WeightData>({ settings: null, entries: [] });
   const [burn, setBurn] = useState<db.BurnData>({ settings: null, entries: [] });
   const [journey, setJourney] = useState<JourneySettings | null>(null);
+  const [nutrition, setNutrition] = useState<db.NutritionData>({ plan: null, extras: [] });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -61,6 +63,7 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
         setWeight({ settings: data.weight.settings, entries: sortEntries(data.weight.entries) });
         setBurn({ settings: data.burn.settings, entries: sortBurn(data.burn.entries) });
         setJourney(data.journey);
+        setNutrition(data.nutrition);
       })
       .catch(() =>
         onError('Your saved habits could not be loaded. Storage may be unavailable in this browser mode.'),
@@ -137,13 +140,15 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
       nextWeight?: db.WeightData,
       nextBurn?: db.BurnData,
       nextJourney?: JourneySettings | null,
+      nextNutrition?: db.NutritionData,
     ) => {
-      await db.replaceAll(nextHabits, nextEntries, nextWeight, nextBurn, nextJourney);
+      await db.replaceAll(nextHabits, nextEntries, nextWeight, nextBurn, nextJourney, nextNutrition);
       setHabits([...nextHabits].sort(byOrder));
       setEntries(indexEntries(nextEntries));
       if (nextWeight) setWeight({ settings: nextWeight.settings, entries: sortEntries(nextWeight.entries) });
       if (nextBurn) setBurn({ settings: nextBurn.settings, entries: sortBurn(nextBurn.entries) });
       if (nextJourney !== undefined) setJourney(nextJourney);
+      if (nextNutrition) setNutrition(nextNutrition);
     },
     [],
   );
@@ -199,6 +204,39 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
     (id: string) => {
       setWeight((w) => ({ ...w, entries: w.entries.filter((e) => e.id !== id) }));
       void persist(db.deleteWeightEntry(id));
+    },
+    [persist],
+  );
+
+  /* ---------- Nutrition & fat loss ---------- */
+
+  /** Saves a validated weekly plan as a new dated version (see withVersion). */
+  const saveNutritionPlan = useCallback(
+    (draft: PlanDraft) => {
+      const plan: NutritionPlan = withVersion(nutrition.plan, draft, today);
+      setNutrition((n) => ({ ...n, plan }));
+      void persist(db.putNutritionPlan(plan));
+    },
+    [nutrition.plan, persist, today],
+  );
+
+  /** Adds or updates an extra food for its date only. Future dates are rejected. */
+  const saveExtraFood = useCallback(
+    (input: ExtraFood) => {
+      if (input.date > today || !Number.isFinite(input.kcal) || input.kcal < 0) return;
+      const isNew = !nutrition.extras.some((e) => e.id === input.id);
+      const recordedAt = nutrition.extras.reduce((m, e) => Math.max(m, e.recordedAt + 1), Date.now());
+      const extra = isNew ? { ...input, recordedAt } : input;
+      setNutrition((n) => ({ ...n, extras: [...n.extras.filter((e) => e.id !== extra.id), extra] }));
+      void persist(db.putExtraFood(extra));
+    },
+    [nutrition.extras, persist, today],
+  );
+
+  const deleteExtraFood = useCallback(
+    (id: string) => {
+      setNutrition((n) => ({ ...n, extras: n.extras.filter((e) => e.id !== id) }));
+      void persist(db.deleteExtraFood(id));
     },
     [persist],
   );
@@ -303,6 +341,10 @@ export function useHabitStore(today: DayKey, onError: (message: string) => void)
     journey,
     startJourney,
     updateJourney,
+    nutrition,
+    saveNutritionPlan,
+    saveExtraFood,
+    deleteExtraFood,
   };
 }
 

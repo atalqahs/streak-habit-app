@@ -52,14 +52,30 @@ recalculated from calendar dates whenever the app opens, returns to the foregrou
 Kuwait midnight — no daily input. The end date can be edited (the start date never changes), and
 a new journey can be started from the card's settings.
 
+### Weekly Fat Loss
+A theoretical, automatically calculated fat-loss equivalent for the current Saturday–Friday week
+(Kuwait time). Set up a weekly nutrition plan once — pick foods from the built-in library and enter
+grams (raw/cooked only where it applies) — and assign every weekday a template. Carb Cycling (off by
+default) allows two or three templates, each usable on any number of days. The plan repeats every
+week until edited; edits apply from the day they are saved and earlier days keep their plan.
+
+For each elapsed day: BMR (Mifflin–St Jeor, male, 175 cm, age from 30 May 1997, weight from the
+Weight card on/before that day) × 1.2 (sedentary) + Burn Goal exercise − (planned food + extra
+food) = balance; ÷ 7.7 gives grams. Today is provisional; future days are never counted; each week
+starts at zero and previous weeks are listed separately. "+ Extra Food" adds a one-off item for a
+single date, from the library or as a custom snack (label calories, or 4-4-9 from all three macros).
+
+Food values: USDA FoodData Central SR Legacy (FDC ids in `src/lib/foods.ts`); Critical Whey from the
+user-supplied label. Saved plans snapshot the values they used.
+
 ### Install on iPhone
 Open the site in **Safari** → **Share** → **Add to Home Screen**. It launches full-screen,
 offline, with its own icon and splash screen.
 
 ### Backups
 Data lives only in this browser's storage, which iOS may clear (for example after long
-inactivity, or when Safari website data is cleared). Backups include weight, calorie burn and journey data; older
-backups still import and leave any section they don't contain (weight, burn, journey) untouched. Use **Settings → Export Backup** regularly
+inactivity, or when Safari website data is cleared). Backups include weight, calorie burn, journey and nutrition data; older
+backups still import and leave any section they don't contain (weight, burn, journey, nutrition) untouched. Use **Settings → Export Backup** regularly
 and keep the JSON file in Files/iCloud Drive. **Import Backup** validates the whole file before
 replacing anything; a bad file leaves current data untouched.
 
@@ -68,7 +84,7 @@ replacing anything; a bad file leaves current data untouched.
 ```bash
 npm install
 npm run dev        # local dev server
-npm test           # unit tests (streak engine, dates, backup validation)
+npm test           # unit tests (streaks, weight, burn, journey, fat-loss engine, backups)
 npm run build      # typecheck + production build to dist/
 npm run preview    # serve dist/
 npm run icons      # regenerate icons/splash PNGs (needs Playwright + Chromium)
@@ -78,7 +94,7 @@ npm run icons      # regenerate icons/splash PNGs (needs Playwright + Chromium)
 `https://<user>.github.io/<repo>/` and on a custom domain. The service worker (`dist/sw.js`) is
 generated at build time from `src/sw-template.js` with a content-hashed cache name. When a new
 version activates it removes the old cache and reloads open windows, so updates appear on the next
-launch. IndexedDB upgrades only ever add stores (v2 added weight, v3 burn, v4 journey).
+launch. IndexedDB upgrades only ever add stores (v2 added weight, v3 burn, v4 journey, v5 nutrition).
 
 ## Deploying to GitHub Pages
 

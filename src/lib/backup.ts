@@ -1,13 +1,21 @@
 import { isDayKey } from './dates';
 import { MAX_KCAL, sortBurn, type BurnEntry, type BurnGoalVersion, type BurnSettings } from './burn';
-import type { BurnData, WeightData } from './db';
+import type { BurnData, NutritionData, WeightData } from './db';
+import {
+  MAX_TEMPLATES,
+  PROFILE,
+  type DietTemplate,
+  type ExtraFood,
+  type NutritionPlan,
+  type PlanVersion,
+} from './fatloss';
 import type { JourneySettings } from './journey';
 import { entryId, type Entry, type Habit, type HabitType, type ScheduleVersion } from './types';
 import { MAX_KG, MIN_KG, sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 export const BACKUP_FORMAT = 'habits-backup';
-/** v1: habits + entries. v2: adds `weight`. v3: adds `burn`. v4: adds `journey`. */
-export const BACKUP_VERSION = 4;
+/** v1: habits + entries. v2: + `weight`. v3: + `burn`. v4: + `journey`. v5: + `nutrition`. */
+export const BACKUP_VERSION = 5;
 
 export interface Backup {
   format: typeof BACKUP_FORMAT;
@@ -18,6 +26,7 @@ export interface Backup {
   weight: WeightData;
   burn: BurnData;
   journey: JourneySettings | null;
+  nutrition: NutritionData;
 }
 
 export interface ParsedBackup {
@@ -29,6 +38,8 @@ export interface ParsedBackup {
   burn?: BurnData;
   /** Undefined for backups made before v4: the existing journey should be kept. */
   journey?: JourneySettings | null;
+  /** Undefined for backups made before v5: existing nutrition data should be kept. */
+  nutrition?: NutritionData;
 }
 
 export function createBackup(
@@ -37,6 +48,7 @@ export function createBackup(
   weight: WeightData,
   burn: BurnData,
   journey: JourneySettings | null,
+  nutrition: NutritionData,
 ): Backup {
   return {
     format: BACKUP_FORMAT,
@@ -47,6 +59,7 @@ export function createBackup(
     weight: { settings: weight.settings, entries: sortEntries(weight.entries) },
     burn: { settings: burn.settings, entries: sortBurn(burn.entries) },
     journey,
+    nutrition,
   };
 }
 
@@ -209,6 +222,144 @@ function parseJourney(raw: unknown): JourneySettings | null {
   };
 }
 
+const isNonNeg = (v: unknown): v is number => isNum(v) && v >= 0;
+
+function parsePlan(raw: unknown): NutritionPlan | null {
+  if (raw === null) return null;
+  if (!isObj(raw) || !Array.isArray(raw.versions) || raw.versions.length === 0)
+    fail('Nutrition plan in this backup is invalid.');
+  const versions = raw.versions.map((v, vi): PlanVersion => {
+    const where = `Nutrition plan version ${vi + 1}`;
+    if (!isObj(v) || !isDayKey(v.from) || !Array.isArray(v.templates) || !Array.isArray(v.days))
+      fail(`${where} is invalid.`);
+    const cycling = v.carbCycling === true;
+    const count = v.templates.length;
+    if (cycling ? count < 2 || count > MAX_TEMPLATES : count !== 1)
+      fail(`${where}: wrong number of templates.`);
+    const templates = v.templates.map((t, ti): DietTemplate => {
+      if (
+        !isObj(t) ||
+        !isStr(t.id) ||
+        !t.id ||
+        !isStr(t.name) ||
+        !Array.isArray(t.items) ||
+        t.items.length === 0
+      ) {
+        fail(`${where}, template ${ti + 1} is invalid.`);
+      }
+      return {
+        id: t.id,
+        name: t.name.slice(0, 30),
+        items: t.items.map((it) => {
+          const s = isObj(it) ? it.snapshot : null;
+          if (
+            !isObj(it) ||
+            !isStr(it.id) ||
+            !isStr(it.foodId) ||
+            !isStr(it.variantId) ||
+            !isNum(it.grams) ||
+            it.grams <= 0 ||
+            it.grams > 5000 ||
+            !isObj(s) ||
+            !isStr(s.name) ||
+            !isStr(s.variant) ||
+            !isNonNeg(s.kcal) ||
+            !isNonNeg(s.protein) ||
+            !isNonNeg(s.carbs) ||
+            !isNonNeg(s.fat)
+          ) {
+            fail(`${where}: a food item is invalid.`);
+          }
+          return {
+            id: it.id,
+            foodId: it.foodId,
+            variantId: it.variantId,
+            grams: it.grams,
+            snapshot: {
+              name: s.name,
+              variant: s.variant,
+              kcal: s.kcal,
+              protein: s.protein,
+              carbs: s.carbs,
+              fat: s.fat,
+            },
+          };
+        }),
+      };
+    });
+    const ids = new Set(templates.map((t) => t.id));
+    if (ids.size !== templates.length) fail(`${where}: duplicate templates.`);
+    // Exactly one template per weekday: a 7-slot array of known template ids.
+    if (v.days.length !== 7 || !v.days.every((d) => isStr(d) && ids.has(d))) {
+      fail(`${where}: every weekday must be assigned exactly one template.`);
+    }
+    return {
+      from: v.from,
+      libraryVersion: isNum(v.libraryVersion) ? v.libraryVersion : 1,
+      carbCycling: cycling,
+      templates,
+      days: v.days as string[],
+      savedAt: isNum(v.savedAt) ? v.savedAt : 0,
+    };
+  });
+  for (let i = 1; i < versions.length; i++) {
+    if (versions[i].from <= versions[i - 1].from)
+      fail('Nutrition plan versions must be in increasing date order.');
+  }
+  const p = isObj(raw.profile) ? raw.profile : {};
+  const profile =
+    p.sex === 'male' &&
+    isNum(p.heightCm) &&
+    isDayKey(p.birthDate) &&
+    isNum(p.activityFactor) &&
+    isNum(p.kcalPerKgFat)
+      ? {
+          sex: 'male' as const,
+          heightCm: p.heightCm,
+          birthDate: p.birthDate,
+          activityFactor: p.activityFactor,
+          kcalPerKgFat: p.kcalPerKgFat,
+        }
+      : PROFILE;
+  return { id: 'plan', profile, versions };
+}
+
+const macro = (v: unknown, where: string): number | null => {
+  if (v === null || v === undefined) return null;
+  if (!isNonNeg(v)) fail(`${where}: macros must be 0 or more, or unknown.`);
+  return v;
+};
+
+function parseNutrition(raw: unknown): NutritionData {
+  if (!isObj(raw) || !Array.isArray(raw.extras)) fail('Nutrition data in this backup is invalid.');
+  const plan = parsePlan(raw.plan ?? null);
+  const extras = raw.extras.map((e, i): ExtraFood => {
+    const where = `Extra food ${i + 1}`;
+    if (!isObj(e) || !isStr(e.id) || !e.id || !isDayKey(e.date)) fail(`${where} is invalid.`);
+    if (!isNonNeg(e.kcal)) fail(`${where}: calories must be 0 or more.`);
+    const kind = e.kind === 'library' ? 'library' : 'custom';
+    const source = e.kcalSource === 'library' || e.kcalSource === 'macros' ? e.kcalSource : 'label';
+    return {
+      id: e.id,
+      date: e.date,
+      name: isStr(e.name) ? e.name.slice(0, 60) : '',
+      kind,
+      ...(kind === 'library' && isStr(e.foodId) && isStr(e.variantId) && isNum(e.grams)
+        ? { foodId: e.foodId, variantId: e.variantId, grams: e.grams }
+        : {}),
+      kcal: e.kcal,
+      kcalSource: source,
+      protein: macro(e.protein, where),
+      carbs: macro(e.carbs, where),
+      fat: macro(e.fat, where),
+      recordedAt: isNum(e.recordedAt) ? e.recordedAt : 0,
+    };
+  });
+  if (new Set(extras.map((e) => e.id)).size !== extras.length)
+    fail('This backup contains duplicate extra foods.');
+  return { plan, extras };
+}
+
 /** Parses and fully validates a backup file. Throws BackupError with a readable message. */
 export function parseBackup(text: string): ParsedBackup {
   let data: unknown;
@@ -234,5 +385,7 @@ export function parseBackup(text: string): ParsedBackup {
   const weight = data.version >= 2 && data.weight !== undefined ? parseWeight(data.weight) : undefined;
   const burn = data.version >= 3 && data.burn !== undefined ? parseBurn(data.burn) : undefined;
   const journey = data.version >= 4 && data.journey !== undefined ? parseJourney(data.journey) : undefined;
-  return { habits, entries, weight, burn, journey };
+  const nutrition =
+    data.version >= 5 && data.nutrition !== undefined ? parseNutrition(data.nutrition) : undefined;
+  return { habits, entries, weight, burn, journey, nutrition };
 }

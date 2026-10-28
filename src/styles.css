@@ -1844,6 +1844,449 @@ p {
   color: var(--text-2);
 }
 
+/* Weekly Fat Loss */
+.fat-body {
+  display: grid;
+  gap: var(--s1);
+  width: 100%;
+  margin-top: var(--s2);
+  text-align: left;
+  border-radius: var(--r-sm);
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--t-press);
+}
+
+.fat-body:active {
+  opacity: 0.8;
+}
+
+.fat-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.fat-now {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.fat-value {
+  display: inline-block;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--weight-down);
+  transform-origin: left bottom;
+  animation: bump 260ms var(--ease-out);
+}
+
+.fat-card.surplus .fat-value {
+  color: var(--weight-up);
+}
+
+.fat-unit {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.fat-side {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.fat-sub {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* Seven-day diverging mini chart: deficit up, surplus down. */
+.fat-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--surface-line);
+}
+
+.fat-day {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fat-bar-area {
+  display: grid;
+  grid-template-rows: 34px 1px 14px;
+  justify-items: center;
+  width: 100%;
+}
+
+.fat-bar {
+  width: 14px;
+  border-radius: 4px;
+  transition: transform 420ms var(--ease-out);
+}
+
+.fat-bar.up {
+  align-self: end;
+  height: 34px;
+  background: var(--weight-down);
+  transform-origin: bottom;
+}
+
+.fat-bar.down {
+  align-self: start;
+  height: 14px;
+  background: var(--weight-up);
+  transform-origin: top;
+}
+
+.fat-baseline {
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.fat-day.today .fat-bar {
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgba(0, 0, 0, 0.35) 3px 5px);
+}
+
+.fat-day-letter {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.fat-day.today .fat-day-letter {
+  border-color: var(--ring-today);
+  color: var(--text);
+}
+
+.fat-day.future .fat-day-letter,
+.fat-day.unavailable .fat-day-letter {
+  color: var(--text-3);
+}
+
+.fat-day-value {
+  min-height: 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fat-day.neg .fat-day-value {
+  color: var(--weight-up);
+}
+
+.fat-day.today .fat-day-value {
+  color: var(--text-2);
+}
+
+.fat-today {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.fat-today-label {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.fat-note {
+  font-size: 12px;
+  color: var(--weight-up);
+}
+
+.fat-disclaimer {
+  margin-top: var(--s2);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.fat-sheet {
+  display: grid;
+  gap: var(--s3);
+}
+
+.stat-value.small {
+  font-size: 22px;
+}
+
+.surplus-text {
+  color: var(--weight-up);
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+.fat-table {
+  display: grid;
+  border-radius: var(--r-md);
+  background: var(--control);
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.fat-row {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr 1fr 1.1fr 1fr;
+  gap: var(--s1);
+  padding: 10px var(--s3);
+  font-size: 13px;
+  text-align: right;
+}
+
+.fat-row > :first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.fat-row + .fat-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fat-row.head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fat-row.future,
+.fat-row.unavailable {
+  color: var(--text-3);
+}
+
+.fat-row.today {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.fat-macros {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row.static {
+  cursor: default;
+}
+
+/* Nutrition plan editor */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.toggle-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 51px;
+  height: 31px;
+  border-radius: 16px;
+  background: var(--control-pressed);
+  transition: background-color var(--t-state);
+}
+
+.switch span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform var(--t-state) var(--ease-out);
+}
+
+.switch.on {
+  background: var(--weight-down);
+}
+
+.switch.on span {
+  transform: translateX(20px);
+}
+
+.template-card {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.template-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.template-name {
+  font-weight: 600;
+}
+
+.plan-item {
+  display: grid;
+  gap: var(--s2);
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.plan-item-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.value-input.grams {
+  width: 120px;
+  flex: none;
+}
+
+.value-input.grams .input {
+  padding-right: 36px;
+}
+
+.plan-item-kcal {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.input.select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 36px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-2) 50%),
+    linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
+  background-position:
+    calc(100% - 20px) 21px,
+    calc(100% - 15px) 21px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+}
+
+.segmented.prep {
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+}
+
+.add-food {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.template-total {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.assign-list {
+  display: grid;
+  gap: var(--s2);
+}
+
+.assign-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.assign-day {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.assign-row.missing .assign-day {
+  color: #ff6961;
+}
+
+.segmented.assign {
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+}
+
+.segmented.assign button {
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.issue-list {
+  margin: 0;
+  padding-left: var(--s5);
+  font-size: 13px;
+  color: #ff6961;
+}
+
+.profile-list {
+  margin-top: var(--s2);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Extra food */
+.extra-sheet {
+  display: grid;
+  gap: var(--s3);
+}
+
+.extra-preview {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.macro-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s2);
+}
+
 /* Weight sheet */
 .weight-sheet {
   display: grid;

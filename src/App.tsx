@@ -11,6 +11,10 @@ import { WeekGrid } from './components/WeekGrid';
 import { BurnCard } from './components/BurnCard';
 import { BurnLogSheet, BurnSettingsSheet } from './components/BurnSheet';
 import { JourneyCard, JourneySettingsSheet, JourneySetupSheet } from './components/JourneyCard';
+import { ExtraFoodSheet } from './components/ExtraFoodSheet';
+import { FatLossCard, FatLossDetailsSheet } from './components/FatLossCard';
+import { NutritionPlanSheet } from './components/NutritionPlanSheet';
+import { fatWeekStart, indexSources, weekBalance, type ExtraFood } from './lib/fatloss';
 import { WeightCard } from './components/WeightCard';
 import { WeightSetupSheet, WeightSheet } from './components/WeightSheet';
 import { ChevronLeft, ChevronRight, Plus, Settings } from './components/icons';
@@ -28,6 +32,9 @@ type SheetState =
   | { kind: 'burn-settings' }
   | { kind: 'journey-setup' }
   | { kind: 'journey-settings' }
+  | { kind: 'nutrition-plan' }
+  | { kind: 'extra-food'; extra: ExtraFood | null }
+  | { kind: 'fat-details' }
   | null;
 
 export function App() {
@@ -106,6 +113,23 @@ function Main() {
   const openBurnSettings = useCallback(() => setSheet({ kind: 'burn-settings' }), []);
   const openJourneySetup = useCallback(() => setSheet({ kind: 'journey-setup' }), []);
   const openJourneySettings = useCallback(() => setSheet({ kind: 'journey-settings' }), []);
+  const openNutritionPlan = useCallback(() => setSheet({ kind: 'nutrition-plan' }), []);
+  const openExtraFood = useCallback(() => setSheet({ kind: 'extra-food', extra: null }), []);
+  const openFatDetails = useCallback(() => setSheet({ kind: 'fat-details' }), []);
+
+  // Weekly fat-loss estimate: derived from the plan, Weight entries, Burn Goal
+  // entries and extra foods, for the Saturday–Friday week containing today.
+  const fatIndex = useMemo(
+    () =>
+      indexSources({
+        plan: store.nutrition.plan,
+        weights: store.weight.entries,
+        burns: store.burn.entries,
+        extras: store.nutrition.extras,
+      }),
+    [store.nutrition, store.weight.entries, store.burn.entries],
+  );
+  const fatWeek = useMemo(() => weekBalance(fatIndex, fatWeekStart(today), today), [fatIndex, today]);
   const onDetails = useCallback((habit: Habit) => setSheet({ kind: 'details', id: habit.id }), []);
 
   const days = useMemo(() => weekDays(week), [week]);
@@ -215,6 +239,14 @@ function Main() {
               onSetup={openJourneySetup}
               onSettings={openJourneySettings}
             />
+            <FatLossCard
+              hasPlan={!!store.nutrition.plan}
+              week={fatWeek}
+              today={today}
+              onSetup={openNutritionPlan}
+              onExtra={openExtraFood}
+              onDetails={openFatDetails}
+            />
           </div>
         )}
       </main>
@@ -268,9 +300,43 @@ function Main() {
           weight={store.weight}
           burn={store.burn}
           journey={store.journey}
+          nutrition={store.nutrition}
           onImport={store.replaceAll}
           onReorder={() => setSheet({ kind: 'reorder' })}
           notify={notify}
+          onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'nutrition-plan' && (
+        <NutritionPlanSheet
+          key="nutrition-plan"
+          plan={store.nutrition.plan}
+          today={today}
+          onSave={store.saveNutritionPlan}
+          onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'extra-food' && (
+        <ExtraFoodSheet
+          key={`extra-${sheet.extra?.id ?? 'new'}`}
+          extras={store.nutrition.extras}
+          today={today}
+          initial={sheet.extra}
+          onSave={store.saveExtraFood}
+          onDelete={store.deleteExtraFood}
+          onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'fat-details' && (
+        <FatLossDetailsSheet
+          key="fat-details"
+          week={fatWeek}
+          ix={fatIndex}
+          today={today}
+          currentWeight={
+            store.weight.entries.length ? store.weight.entries[store.weight.entries.length - 1].value : null
+          }
+          onEditExtra={(extra) => setSheet({ kind: 'extra-food', extra })}
           onClose={closeSheet}
         />
       )}

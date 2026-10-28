@@ -1,5 +1,6 @@
 import type { Entry, Habit } from './types';
 import type { BurnEntry, BurnSettings } from './burn';
+import type { ExtraFood, NutritionPlan } from './fatloss';
 import type { JourneySettings } from './journey';
 import type { WeightEntry, WeightSettings } from './weight';
 
@@ -12,8 +13,9 @@ const DB_NAME = 'habits';
  *   v2: + weightSettings, weightEntries
  *   v3: + burnSettings, burnEntries
  *   v4: + journey
+ *   v5: + nutritionPlan, extraFoods
  */
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const HABITS = 'habits';
 const ENTRIES = 'entries';
 const WEIGHT_SETTINGS = 'weightSettings';
@@ -21,6 +23,8 @@ const WEIGHT_ENTRIES = 'weightEntries';
 const BURN_SETTINGS = 'burnSettings';
 const BURN_ENTRIES = 'burnEntries';
 const JOURNEY = 'journey';
+const NUTRITION_PLAN = 'nutritionPlan';
+const EXTRA_FOODS = 'extraFoods';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -44,6 +48,11 @@ function open(): Promise<IDBDatabase> {
         db.createObjectStore(BURN_ENTRIES, { keyPath: 'id' }).createIndex('date', 'date');
       }
       if (!db.objectStoreNames.contains(JOURNEY)) db.createObjectStore(JOURNEY, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(NUTRITION_PLAN))
+        db.createObjectStore(NUTRITION_PLAN, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(EXTRA_FOODS)) {
+        db.createObjectStore(EXTRA_FOODS, { keyPath: 'id' }).createIndex('date', 'date');
+      }
     };
     request.onsuccess = () => {
       const db = request.result;
@@ -104,6 +113,7 @@ export async function loadAll(): Promise<{
   weight: WeightData;
   burn: BurnData;
   journey: JourneySettings | null;
+  nutrition: NutritionData;
 }> {
   const [habits, entries, settings, weightEntries, burnSettings, burnEntries, journey] = await Promise.all([
     getAll<Habit>(HABITS),
@@ -114,13 +124,35 @@ export async function loadAll(): Promise<{
     getAll<BurnEntry>(BURN_ENTRIES),
     getAll<JourneySettings>(JOURNEY),
   ]);
+  const [plans, extras] = await Promise.all([
+    getAll<NutritionPlan>(NUTRITION_PLAN),
+    getAll<ExtraFood>(EXTRA_FOODS),
+  ]);
   return {
     habits,
     entries,
     weight: { settings: settings[0] ?? null, entries: weightEntries },
     burn: { settings: burnSettings[0] ?? null, entries: burnEntries },
     journey: journey[0] ?? null,
+    nutrition: { plan: plans[0] ?? null, extras },
   };
+}
+
+export interface NutritionData {
+  plan: NutritionPlan | null;
+  extras: ExtraFood[];
+}
+
+export function putNutritionPlan(plan: NutritionPlan): Promise<void> {
+  return run([NUTRITION_PLAN], 'readwrite', (tx) => tx.objectStore(NUTRITION_PLAN).put(plan));
+}
+
+export function putExtraFood(extra: ExtraFood): Promise<void> {
+  return run([EXTRA_FOODS], 'readwrite', (tx) => tx.objectStore(EXTRA_FOODS).put(extra));
+}
+
+export function deleteExtraFood(id: string): Promise<void> {
+  return run([EXTRA_FOODS], 'readwrite', (tx) => tx.objectStore(EXTRA_FOODS).delete(id));
 }
 
 export function putJourney(journey: JourneySettings): Promise<void> {
@@ -195,8 +227,10 @@ export function replaceAll(
   burn?: BurnData,
   /** null clears the journey; undefined leaves it untouched. */
   journey?: JourneySettings | null,
+  nutrition?: NutritionData,
 ): Promise<void> {
   const stores = [HABITS, ENTRIES];
+  if (nutrition) stores.push(NUTRITION_PLAN, EXTRA_FOODS);
   if (journey !== undefined) stores.push(JOURNEY);
   if (weight) stores.push(WEIGHT_SETTINGS, WEIGHT_ENTRIES);
   if (burn) stores.push(BURN_SETTINGS, BURN_ENTRIES);
@@ -227,6 +261,14 @@ export function replaceAll(
       const js = tx.objectStore(JOURNEY);
       js.clear();
       if (journey) js.put(journey);
+    }
+    if (nutrition) {
+      const np = tx.objectStore(NUTRITION_PLAN);
+      const ef = tx.objectStore(EXTRA_FOODS);
+      np.clear();
+      ef.clear();
+      if (nutrition.plan) np.put(nutrition.plan);
+      for (const extra of nutrition.extras) ef.put(extra);
     }
   });
 }
