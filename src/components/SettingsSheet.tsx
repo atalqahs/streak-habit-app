@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { createBackup, parseBackup, BackupError } from '../lib/backup';
 import { todayKey } from '../lib/dates';
-import type { BurnData, NutritionData, WeightData } from '../lib/db';
+import type { BurnData, NutritionData, NutritionImport, WeightData } from '../lib/db';
 import type { JourneySettings } from '../lib/journey';
 import type { Entry, Habit } from '../lib/types';
 import { ChevronDown, ChevronRight, ChevronUp, Download, Reorder, Upload } from './icons';
@@ -20,7 +20,7 @@ interface SettingsProps {
     weight?: WeightData,
     burn?: BurnData,
     journey?: JourneySettings | null,
-    nutrition?: NutritionData,
+    nutrition?: NutritionImport,
   ) => Promise<void>;
   onReorder: () => void;
   notify: (message: string) => void;
@@ -105,7 +105,10 @@ function Settings({
               : ' Your current journey is cleared.'
             : ' This backup has no journey, so your current journey is kept.') +
           (data.nutrition
-            ? ` Your nutrition plan and ${data.nutrition.extras.length} extra food entr${data.nutrition.extras.length === 1 ? 'y are' : 'ies are'} replaced.`
+            ? ` Your nutrition plan and ${data.nutrition.extras.length} extra food entr${data.nutrition.extras.length === 1 ? 'y are' : 'ies are'} replaced.` +
+              (data.nutrition.replacements
+                ? ` Food replacements: ${data.nutrition.replacements.length}.`
+                : ' This backup has no food replacements, so your current ones are kept.')
             : ' This backup has no nutrition plan, so your current plan and extra foods are kept.'),
         confirmLabel: 'Replace',
         destructive: true,

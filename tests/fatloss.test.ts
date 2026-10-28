@@ -4,9 +4,11 @@ import {
   ageOn,
   bmrMale,
   dayBalance,
+  draftFromVersion,
   fatWeekDays,
   fatWeekStart,
   indexSources,
+  makeReplacement,
   parseOptional,
   pastWeeks,
   planOn,
@@ -16,6 +18,7 @@ import {
   weekBalance,
   withVersion,
   type ExtraFood,
+  type FoodReplacement,
   type NutritionPlan,
   type PlanDraft,
 } from '../src/lib/fatloss';
@@ -455,5 +458,186 @@ describe('energy balance', () => {
     const d = dayBalance(ix, TODAY, TODAY);
     expect(d.macros.protein).toBeCloseTo(templateTotals(plan.versions[0].templates[0]).protein + 10, 9);
     expect(d.macros.unknown).toBe(1);
+  });
+});
+
+/* ---------- one-day food replacement ---------- */
+
+describe('one-day food replacement', () => {
+  // Low on Sun, Mon, Wed, Thu, Sat; High on Tue, Fri (JS weekday order Sun…Sat).
+  const days = ['L', 'L', 'H', 'L', 'L', 'H', 'L'];
+  const plan = withVersion(null, cycling(days), TODAY, { sinceWeekStart: true });
+  const low = plan.versions[0].templates.find((t) => t.id === 'L')!;
+  const chicken = low.items[0];
+  const rice = low.items[4];
+  const weights = [weightAt('2026-10-01', 86.4)];
+  const FRI = '2026-10-30';
+  const NEXT_THU = '2026-11-05';
+  const beef = (grams = 400, date = THU, item = chicken, id?: string) =>
+    makeReplacement(
+      {
+        id,
+        date,
+        planFrom: SAT,
+        templateId: 'L',
+        item,
+        foodId: 'beef-sirloin-0',
+        variantId: 'cooked',
+        grams,
+      },
+      ++n,
+    );
+  const ix = (replacements: FoodReplacement[], extras: ExtraFood[] = [], p = plan) =>
+    indexSources({ plan: p, weights, burns: [], extras, replacements });
+  const base = dayBalance(ix([]), THU, FRI);
+
+  it('1–2: Thursday swaps chicken for beef — original removed, beef counted once', () => {
+    const d = dayBalance(ix([beef()]), THU, FRI);
+    expect(base.plannedKcal).toBeCloseTo(1469.78, 2);
+    expect(d.plannedKcal).toBeCloseTo(1469.78 - 716 + 732, 6);
+    expect(d.macros.protein).toBeCloseTo(base.macros.protein - 99.04 + 122.2, 6);
+    expect(d.macros.fat).toBeCloseTo(base.macros.fat - 32.6 + 23.16, 6);
+    expect(d.originalPlannedKcal).toBeCloseTo(base.plannedKcal, 9);
+    expect(d.scheduled.filter((s) => s.replacement).map((s) => s.item.id)).toEqual([chicken.id]);
+    // The template itself is untouched.
+    expect(templateTotals(low).kcal).toBeCloseTo(1469.78, 2);
+  });
+
+  it('3–5: Friday, next Thursday and other days on the same template are unchanged', () => {
+    const r = ix([beef()]);
+    expect(dayBalance(r, FRI, FRI).plannedKcal).toBeCloseTo(dayBalance(ix([]), FRI, FRI).plannedKcal, 9);
+    expect(dayBalance(r, FRI, FRI).templateName).toBe('High Carb');
+    expect(dayBalance(r, NEXT_THU, '2026-11-06').plannedKcal).toBeCloseTo(1469.78, 2);
+    for (const d of ['2026-10-25', '2026-10-26', '2026-10-28', '2026-10-24']) {
+      expect(dayBalance(r, d, FRI).templateName).toBe('Low Carb');
+      expect(dayBalance(r, d, FRI).plannedKcal).toBeCloseTo(1469.78, 2);
+    }
+  });
+
+  it('6: reverting restores the original food and energy balance', () => {
+    expect(dayBalance(ix([]), THU, FRI).deficit).toBeCloseTo(base.deficit, 9);
+    expect(dayBalance(ix([beef()]), THU, FRI).deficit).not.toBeCloseTo(base.deficit, 3);
+  });
+
+  it('7: editing grams updates calories and macros', () => {
+    const d = dayBalance(ix([beef(300)]), THU, FRI);
+    expect(d.plannedKcal).toBeCloseTo(1469.78 - 716 + 549, 6);
+    expect(d.macros.protein).toBeCloseTo(base.macros.protein - 99.04 + 91.65, 6);
+  });
+
+  it('8: several distinct replacements on one day', () => {
+    const potatoes = makeReplacement(
+      {
+        date: THU,
+        planFrom: SAT,
+        templateId: 'L',
+        item: rice,
+        foodId: 'potatoes',
+        variantId: 'boiled',
+        grams: 400,
+      },
+      ++n,
+    );
+    const d = dayBalance(ix([beef(), potatoes]), THU, FRI);
+    expect(d.plannedKcal).toBeCloseTo(1469.78 - 716 + 732 - 390 + 348, 6);
+    expect(d.scheduled.filter((s) => s.replacement)).toHaveLength(2);
+  });
+
+  it('identifies the exact item when an ingredient repeats in a template', () => {
+    const twin = withVersion(
+      null,
+      {
+        carbCycling: false,
+        templates: [
+          {
+            id: 'A',
+            name: 'Daily',
+            items: [item('chicken-thigh', 'cooked', 200), item('chicken-thigh', 'cooked', 200)],
+          },
+        ],
+        days: all('A'),
+      },
+      TODAY,
+      { sinceWeekStart: true },
+    );
+    const [first] = twin.versions[0].templates[0].items;
+    const r = makeReplacement(
+      {
+        date: THU,
+        planFrom: SAT,
+        templateId: 'A',
+        item: first,
+        foodId: 'beef-sirloin-0',
+        variantId: 'cooked',
+        grams: 200,
+      },
+      ++n,
+    );
+    const d = dayBalance(
+      indexSources({ plan: twin, weights, burns: [], extras: [], replacements: [r] }),
+      THU,
+      FRI,
+    );
+    expect(d.scheduled.map((s) => !!s.replacement)).toEqual([true, false]);
+    expect(d.plannedKcal).toBeCloseTo(358 + 366, 6);
+  });
+
+  it('9: a replacement and an extra snack coexist without double counting', () => {
+    const d = dayBalance(ix([beef()], [snack(THU, 250)]), THU, FRI);
+    expect(d.intakeKcal).toBeCloseTo(1469.78 - 716 + 732 + 250, 6);
+    expect(d.extraKcal).toBe(250);
+    expect(base.deficit - d.deficit).toBeCloseTo(16 + 250, 6);
+  });
+
+  it('10: historical replacements keep their plan version and snapshots', () => {
+    // Plan edited on Mon Nov 2 (chicken grams 400 → 350, same item id).
+    const draft = draftFromVersion(plan.versions[0]);
+    draft.templates[0].items[0].grams = 350;
+    const edited = withVersion(plan, draft, '2026-11-02');
+    const r = beef();
+    // Thursday Oct 29 still uses version 1 and its replacement applies.
+    expect(dayBalance(ix([r], [], edited), THU, '2026-11-06').plannedKcal).toBeCloseTo(
+      1469.78 - 716 + 732,
+      6,
+    );
+    // A replacement saved against the old item does not silently apply to the changed item.
+    const stale = beef(400, NEXT_THU);
+    const after = dayBalance(ix([stale], [], edited), NEXT_THU, '2026-11-06');
+    expect(after.scheduled.some((s) => s.replacement)).toBe(false);
+    expect(after.orphanedReplacements.map((x) => x.id)).toEqual([stale.id]);
+    expect(after.plannedKcal).toBeCloseTo(1469.78 - 716 + 626.5, 6);
+    // Stored replacement values are used even if the library later changes.
+    const changed = {
+      ...r,
+      replacement: { ...r.replacement, snapshot: { ...r.replacement.snapshot, kcal: 200 } },
+    };
+    expect(dayBalance(ix([changed]), THU, FRI).plannedKcal).toBeCloseTo(1469.78 - 716 + 800, 6);
+  });
+
+  it('11: updates the daily deficit and weekly fat equivalent', () => {
+    const w0 = weekBalance(ix([]), SAT, FRI);
+    const w1 = weekBalance(ix([beef()]), SAT, FRI);
+    expect(w0.netDeficit - w1.netDeficit).toBeCloseTo(16, 6);
+    expect(w0.fatGrams - w1.fatGrams).toBeCloseTo((16 / 7700) * 1000, 6);
+    // Today stays a provisional projection, separate from completed days.
+    const highChicken = plan.versions[0].templates[1].items[0];
+    const friBeef = makeReplacement(
+      {
+        date: FRI,
+        planFrom: SAT,
+        templateId: 'H',
+        item: highChicken,
+        foodId: 'beef-sirloin-0',
+        variantId: 'cooked',
+        grams: 400,
+      },
+      ++n,
+    );
+    const wt = weekBalance(ix([friBeef]), SAT, FRI);
+    expect(wt.completed.deficit).toBeCloseTo(w0.completed.deficit, 9);
+    expect(wt.todayProjected!.deficit).not.toBeCloseTo(w0.todayProjected!.deficit, 3);
+    // A future replacement is not counted until its day.
+    const future = weekBalance(ix([beef(400, NEXT_THU)]), fatWeekStart(NEXT_THU), '2026-11-03');
+    expect(future.days.find((d) => d.date === NEXT_THU)!.deficit).toBe(0);
   });
 });

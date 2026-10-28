@@ -1,11 +1,12 @@
 import { isDayKey } from './dates';
 import { MAX_KCAL, sortBurn, type BurnEntry, type BurnGoalVersion, type BurnSettings } from './burn';
-import type { BurnData, NutritionData, WeightData } from './db';
+import type { BurnData, NutritionData, NutritionImport, WeightData } from './db';
 import {
   MAX_TEMPLATES,
   PROFILE,
   type DietTemplate,
   type ExtraFood,
+  type FoodReplacement,
   type NutritionPlan,
   type PlanVersion,
 } from './fatloss';
@@ -14,8 +15,11 @@ import { entryId, type Entry, type Habit, type HabitType, type ScheduleVersion }
 import { MAX_KG, MIN_KG, sortEntries, type WeightEntry, type WeightSettings } from './weight';
 
 export const BACKUP_FORMAT = 'habits-backup';
-/** v1: habits + entries. v2: + `weight`. v3: + `burn`. v4: + `journey`. v5: + `nutrition`. */
-export const BACKUP_VERSION = 5;
+/**
+ * v1: habits + entries. v2: + `weight`. v3: + `burn`. v4: + `journey`. v5: + `nutrition`.
+ * v6: + `nutrition.replacements` (one-day food replacements).
+ */
+export const BACKUP_VERSION = 6;
 
 export interface Backup {
   format: typeof BACKUP_FORMAT;
@@ -39,7 +43,7 @@ export interface ParsedBackup {
   /** Undefined for backups made before v4: the existing journey should be kept. */
   journey?: JourneySettings | null;
   /** Undefined for backups made before v5: existing nutrition data should be kept. */
-  nutrition?: NutritionData;
+  nutrition?: NutritionImport;
 }
 
 export function createBackup(
@@ -330,7 +334,60 @@ const macro = (v: unknown, where: string): number | null => {
   return v;
 };
 
-function parseNutrition(raw: unknown): NutritionData {
+const snap = (v: unknown, where: string) => {
+  if (
+    !isObj(v) ||
+    !isStr(v.name) ||
+    !isStr(v.variant) ||
+    !isNonNeg(v.kcal) ||
+    !isNonNeg(v.protein) ||
+    !isNonNeg(v.carbs) ||
+    !isNonNeg(v.fat)
+  ) {
+    fail(`${where}: nutrition values are invalid.`);
+  }
+  return { name: v.name, variant: v.variant, kcal: v.kcal, protein: v.protein, carbs: v.carbs, fat: v.fat };
+};
+
+const part = (v: unknown, where: string) => {
+  if (
+    !isObj(v) ||
+    !isStr(v.foodId) ||
+    !isStr(v.variantId) ||
+    !isNum(v.grams) ||
+    v.grams <= 0 ||
+    v.grams > 5000
+  ) {
+    fail(`${where}: food or grams are invalid.`);
+  }
+  return { foodId: v.foodId, variantId: v.variantId, grams: v.grams, snapshot: snap(v.snapshot, where) };
+};
+
+function parseReplacements(raw: unknown[]): FoodReplacement[] {
+  const list = raw.map((r, i): FoodReplacement => {
+    const where = `Food replacement ${i + 1}`;
+    if (!isObj(r) || !isStr(r.id) || !r.id || !isDayKey(r.date) || !isStr(r.templateId) || !isStr(r.itemId)) {
+      fail(`${where} is invalid.`);
+    }
+    return {
+      id: r.id,
+      date: r.date,
+      templateId: r.templateId,
+      itemId: r.itemId,
+      planFrom: isDayKey(r.planFrom) ? r.planFrom : r.date,
+      original: part(r.original, where),
+      replacement: part(r.replacement, where),
+      recordedAt: isNum(r.recordedAt) ? r.recordedAt : 0,
+    };
+  });
+  if (new Set(list.map((r) => r.id)).size !== list.length)
+    fail('This backup contains duplicate food replacements.');
+  const keys = list.map((r) => `${r.date}|${r.templateId}|${r.itemId}`);
+  if (new Set(keys).size !== keys.length) fail('This backup replaces the same food twice on one day.');
+  return list;
+}
+
+function parseNutrition(raw: unknown, version: number): NutritionImport {
   if (!isObj(raw) || !Array.isArray(raw.extras)) fail('Nutrition data in this backup is invalid.');
   const plan = parsePlan(raw.plan ?? null);
   const extras = raw.extras.map((e, i): ExtraFood => {
@@ -357,7 +414,9 @@ function parseNutrition(raw: unknown): NutritionData {
   });
   if (new Set(extras.map((e) => e.id)).size !== extras.length)
     fail('This backup contains duplicate extra foods.');
-  return { plan, extras };
+  const replacements =
+    version >= 6 && Array.isArray(raw.replacements) ? parseReplacements(raw.replacements) : undefined;
+  return { plan, extras, ...(replacements ? { replacements } : {}) };
 }
 
 /** Parses and fully validates a backup file. Throws BackupError with a readable message. */
@@ -386,6 +445,8 @@ export function parseBackup(text: string): ParsedBackup {
   const burn = data.version >= 3 && data.burn !== undefined ? parseBurn(data.burn) : undefined;
   const journey = data.version >= 4 && data.journey !== undefined ? parseJourney(data.journey) : undefined;
   const nutrition =
-    data.version >= 5 && data.nutrition !== undefined ? parseNutrition(data.nutrition) : undefined;
+    data.version >= 5 && data.nutrition !== undefined
+      ? parseNutrition(data.nutrition, data.version)
+      : undefined;
   return { habits, entries, weight, burn, journey, nutrition };
 }

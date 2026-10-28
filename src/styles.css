@@ -2312,6 +2312,165 @@ p {
   gap: var(--s2);
 }
 
+/* Replace Food (one day) */
+.replace-sheet {
+  display: grid;
+  gap: var(--s3);
+}
+
+.replace-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s3);
+  font-variant-numeric: tabular-nums;
+}
+
+.replace-template {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.replace-day-kcal {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.replace-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.replace-list li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.replace-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px var(--s3);
+  width: 100%;
+  min-height: 50px;
+  padding: var(--s3) var(--s4);
+  text-align: left;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--t-press);
+}
+
+.replace-row:active,
+.replace-row.active {
+  background: var(--control-pressed);
+}
+
+.replace-row.replaced .replace-original,
+.replace-row.replaced > .replace-kcal {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+.replace-kcal {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.replace-new {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px var(--s2);
+  font-weight: 600;
+}
+
+.replace-new .replace-kcal {
+  margin-left: auto;
+  color: var(--text);
+}
+
+.replace-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(90, 208, 138, 0.16);
+  color: var(--weight-down);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.replace-editor {
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.compare {
+  display: grid;
+  border-radius: var(--r-sm);
+  background: var(--control);
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.compare-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.1fr 0.9fr;
+  gap: var(--s1);
+  padding: 8px var(--s3);
+  font-size: 13px;
+  text-align: right;
+}
+
+.compare-row > :first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.compare-row + .compare-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.compare-row.head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.compare-diff {
+  font-weight: 700;
+}
+
+.edit-actions.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.orphan-box {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: rgba(217, 165, 90, 0.1);
+  font-size: 13px;
+  color: var(--weight-up);
+}
+
+.orphan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  color: var(--text);
+}
+
 /* Weight sheet */
 .weight-sheet {
   display: grid;

@@ -192,6 +192,8 @@ interface DetailsProps {
   today: DayKey;
   currentWeight: number | null;
   onEditExtra: (extra: ExtraFood) => void;
+  /** Opens the one-day Replace Food sheet, optionally at a date/plan item. */
+  onReplace: (date?: DayKey, itemId?: string) => void;
   onClose: () => void;
 }
 
@@ -217,7 +219,7 @@ function MacroLine({ m }: { m: Macros }) {
   );
 }
 
-function Details({ week, ix, today, currentWeight, onEditExtra }: DetailsProps) {
+function Details({ week, ix, today, currentWeight, onEditExtra, onReplace }: DetailsProps) {
   const [allWeeks, setAllWeeks] = useState(false);
   const t = week.days.find((d) => d.date === today)!;
   const profile = ix.plan?.profile ?? PROFILE;
@@ -271,6 +273,10 @@ function Details({ week, ix, today, currentWeight, onEditExtra }: DetailsProps) 
         midnight.
       </p>
 
+      <button type="button" className="btn secondary block" onClick={() => onReplace()}>
+        Replace Food — Today Only
+      </button>
+
       <h3 className="group-title">Today · {DAY_NAMES[dow(today)]} · Projected (provisional)</h3>
       {t.status === 'unavailable' ? (
         <p className="helper">
@@ -285,9 +291,25 @@ function Details({ week, ix, today, currentWeight, onEditExtra }: DetailsProps) 
             <dd>{t.templateName}</dd>
           </div>
           <div>
-            <dt>Planned food</dt>
-            <dd>{kcal(t.plannedKcal)}</dd>
+            <dt>Scheduled food</dt>
+            <dd>
+              {kcal(t.plannedKcal)}
+              {t.scheduled.some((s) => s.replacement) && (
+                <span className="muted"> (scheduled {kcal(t.originalPlannedKcal)})</span>
+              )}
+            </dd>
           </div>
+          {t.scheduled
+            .filter((s) => s.replacement)
+            .map((s) => (
+              <div key={s.item.id}>
+                <dt>Replaced today</dt>
+                <dd>
+                  {s.item.snapshot.name} → {s.replacement!.replacement.snapshot.name} ·{' '}
+                  {Math.round(s.replacement!.replacement.grams)} g
+                </dd>
+              </div>
+            ))}
           <div>
             <dt>Extra food</dt>
             <dd>{t.extraKcal > 0 ? `+${kcal(t.extraKcal)}` : 'None'}</dd>
@@ -396,6 +418,50 @@ function Details({ week, ix, today, currentWeight, onEditExtra }: DetailsProps) 
           · {week.counted} day{week.counted === 1 ? '' : 's'} counted
         </span>
       </p>
+
+      <h3 className="group-title">Food Replacements This Week</h3>
+      {week.days.every(
+        (d) => !d.scheduled.some((s) => s.replacement) && d.orphanedReplacements.length === 0,
+      ) ? (
+        <p className="helper">None. Use “Replace Food” to swap a scheduled food for one day only.</p>
+      ) : (
+        <ul className="weight-history group">
+          {week.days.flatMap((d) => [
+            ...d.scheduled
+              .filter((s) => s.replacement)
+              .map((s) => (
+                <li key={s.replacement!.id}>
+                  <button
+                    type="button"
+                    className="history-row"
+                    onClick={() => onReplace(d.date, s.item.id)}
+                    aria-label={`Edit replacement on ${SHORT[dow(d.date)]}`}
+                  >
+                    <span className="history-date">
+                      {SHORT[dow(d.date)]} · {s.item.snapshot.name} →{' '}
+                      {s.replacement!.replacement.snapshot.name}
+                    </span>
+                    <span className="history-delta">
+                      {s.effective.kcal - s.original.kcal >= 0 ? '+' : '−'}
+                      {Math.abs(Math.round(s.effective.kcal - s.original.kcal))}
+                    </span>
+                    <span className="history-value">{kcal(s.effective.kcal)}</span>
+                  </button>
+                </li>
+              )),
+            ...d.orphanedReplacements.map((r) => (
+              <li key={r.id}>
+                <button type="button" className="history-row" onClick={() => onReplace(d.date)}>
+                  <span className="history-date">
+                    {SHORT[dow(d.date)]} · {r.original.snapshot.name} → {r.replacement.snapshot.name}
+                  </span>
+                  <span className="history-value surplus-text">Not applied</span>
+                </button>
+              </li>
+            )),
+          ])}
+        </ul>
+      )}
 
       <h3 className="group-title">Extra Food This Week</h3>
       {extras.length === 0 ? (

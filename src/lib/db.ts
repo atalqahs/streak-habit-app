@@ -1,6 +1,6 @@
 import type { Entry, Habit } from './types';
 import type { BurnEntry, BurnSettings } from './burn';
-import type { ExtraFood, NutritionPlan } from './fatloss';
+import type { ExtraFood, FoodReplacement, NutritionPlan } from './fatloss';
 import type { JourneySettings } from './journey';
 import type { WeightEntry, WeightSettings } from './weight';
 
@@ -14,8 +14,9 @@ const DB_NAME = 'habits';
  *   v3: + burnSettings, burnEntries
  *   v4: + journey
  *   v5: + nutritionPlan, extraFoods
+ *   v6: + foodReplacements
  */
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const HABITS = 'habits';
 const ENTRIES = 'entries';
 const WEIGHT_SETTINGS = 'weightSettings';
@@ -25,6 +26,7 @@ const BURN_ENTRIES = 'burnEntries';
 const JOURNEY = 'journey';
 const NUTRITION_PLAN = 'nutritionPlan';
 const EXTRA_FOODS = 'extraFoods';
+const FOOD_REPLACEMENTS = 'foodReplacements';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -52,6 +54,9 @@ function open(): Promise<IDBDatabase> {
         db.createObjectStore(NUTRITION_PLAN, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(EXTRA_FOODS)) {
         db.createObjectStore(EXTRA_FOODS, { keyPath: 'id' }).createIndex('date', 'date');
+      }
+      if (!db.objectStoreNames.contains(FOOD_REPLACEMENTS)) {
+        db.createObjectStore(FOOD_REPLACEMENTS, { keyPath: 'id' }).createIndex('date', 'date');
       }
     };
     request.onsuccess = () => {
@@ -124,9 +129,10 @@ export async function loadAll(): Promise<{
     getAll<BurnEntry>(BURN_ENTRIES),
     getAll<JourneySettings>(JOURNEY),
   ]);
-  const [plans, extras] = await Promise.all([
+  const [plans, extras, replacements] = await Promise.all([
     getAll<NutritionPlan>(NUTRITION_PLAN),
     getAll<ExtraFood>(EXTRA_FOODS),
+    getAll<FoodReplacement>(FOOD_REPLACEMENTS),
   ]);
   return {
     habits,
@@ -134,13 +140,26 @@ export async function loadAll(): Promise<{
     weight: { settings: settings[0] ?? null, entries: weightEntries },
     burn: { settings: burnSettings[0] ?? null, entries: burnEntries },
     journey: journey[0] ?? null,
-    nutrition: { plan: plans[0] ?? null, extras },
+    nutrition: { plan: plans[0] ?? null, extras, replacements },
   };
 }
 
 export interface NutritionData {
   plan: NutritionPlan | null;
   extras: ExtraFood[];
+  /** One-day food replacements, kept apart from the plan and extra foods. */
+  replacements: FoodReplacement[];
+}
+
+/** Nutrition section of an import; `replacements` is absent in backups made before v6. */
+export type NutritionImport = Omit<NutritionData, 'replacements'> & { replacements?: FoodReplacement[] };
+
+export function putFoodReplacement(r: FoodReplacement): Promise<void> {
+  return run([FOOD_REPLACEMENTS], 'readwrite', (tx) => tx.objectStore(FOOD_REPLACEMENTS).put(r));
+}
+
+export function deleteFoodReplacement(id: string): Promise<void> {
+  return run([FOOD_REPLACEMENTS], 'readwrite', (tx) => tx.objectStore(FOOD_REPLACEMENTS).delete(id));
 }
 
 export function putNutritionPlan(plan: NutritionPlan): Promise<void> {
@@ -227,10 +246,11 @@ export function replaceAll(
   burn?: BurnData,
   /** null clears the journey; undefined leaves it untouched. */
   journey?: JourneySettings | null,
-  nutrition?: NutritionData,
+  nutrition?: NutritionImport,
 ): Promise<void> {
   const stores = [HABITS, ENTRIES];
   if (nutrition) stores.push(NUTRITION_PLAN, EXTRA_FOODS);
+  if (nutrition?.replacements) stores.push(FOOD_REPLACEMENTS);
   if (journey !== undefined) stores.push(JOURNEY);
   if (weight) stores.push(WEIGHT_SETTINGS, WEIGHT_ENTRIES);
   if (burn) stores.push(BURN_SETTINGS, BURN_ENTRIES);
@@ -269,6 +289,12 @@ export function replaceAll(
       ef.clear();
       if (nutrition.plan) np.put(nutrition.plan);
       for (const extra of nutrition.extras) ef.put(extra);
+      // Older backups have no replacements section: existing replacements are kept.
+      if (nutrition.replacements) {
+        const fr = tx.objectStore(FOOD_REPLACEMENTS);
+        fr.clear();
+        for (const r of nutrition.replacements) fr.put(r);
+      }
     }
   });
 }

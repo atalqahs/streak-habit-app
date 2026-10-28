@@ -313,7 +313,13 @@ export interface DayBalance {
   /** Why a past/today day cannot be estimated. */
   reason?: 'no-plan' | 'no-weight';
   templateName: string | null;
+  /** Scheduled food actually counted (with any one-day replacements applied). */
   plannedKcal: number;
+  /** The same day's template without replacements, for comparison. */
+  originalPlannedKcal: number;
+  scheduled: ScheduledItem[];
+  /** Replacements for this date that no longer match the plan — not counted. */
+  orphanedReplacements: FoodReplacement[];
   extraKcal: number;
   extras: ExtraFood[];
   intakeKcal: number;
@@ -342,11 +348,139 @@ export function weightOn(sorted: WeightEntry[], date: DayKey): number | null {
   return (found ?? sorted[0]).value;
 }
 
+/* ---------- One-day food replacements ---------- */
+
+export interface FoodSnapshot extends Per100 {
+  name: string;
+  variant: string;
+}
+
+/**
+ * Swaps one scheduled plan item for another library food on a single date.
+ * The weekly plan is never modified; other days and weeks are unaffected.
+ */
+export interface FoodReplacement {
+  id: string;
+  date: DayKey;
+  /** The exact plan item replaced (ids, not names, so repeated foods are unambiguous). */
+  templateId: string;
+  itemId: string;
+  /** Plan version in effect when saved (for reference). */
+  planFrom: DayKey;
+  /** Copy of the scheduled item as it was — used to detect plan changes. */
+  original: { foodId: string; variantId: string; grams: number; snapshot: FoodSnapshot };
+  replacement: { foodId: string; variantId: string; grams: number; snapshot: FoodSnapshot };
+  recordedAt: number;
+}
+
+/** A replacement applies only while its target item is unchanged in the plan used that day. */
+export function replacementMatches(r: FoodReplacement, templateId: string, item: PlanItem): boolean {
+  return (
+    r.templateId === templateId &&
+    r.itemId === item.id &&
+    r.original.foodId === item.foodId &&
+    r.original.variantId === item.variantId &&
+    r.original.grams === item.grams &&
+    r.original.snapshot.kcal === item.snapshot.kcal &&
+    r.original.snapshot.protein === item.snapshot.protein &&
+    r.original.snapshot.carbs === item.snapshot.carbs &&
+    r.original.snapshot.fat === item.snapshot.fat
+  );
+}
+
+export interface ScheduledItem {
+  item: PlanItem;
+  /** Active replacement for this item on this date, if any. */
+  replacement: FoodReplacement | null;
+  /** Nutrition actually counted: the replacement's if active, otherwise the item's. */
+  effective: Per100;
+  original: Per100;
+}
+
+/** The template that applies on `date`, with its version. */
+export function templateOn(plan: NutritionPlan | null, date: DayKey) {
+  const version = planOn(plan, date);
+  const template = version
+    ? (version.templates.find((t) => t.id === version.days[weekday(date)]) ?? null)
+    : null;
+  return { version, template };
+}
+
+/** Scheduled items for a day with replacements applied — each original is counted at most once. */
+export function scheduledItems(
+  template: DietTemplate,
+  replacements: FoodReplacement[],
+): { items: ScheduledItem[]; orphaned: FoodReplacement[] } {
+  const used = new Set<string>();
+  const items = template.items.map((item) => {
+    // Newest replacement wins if (defensively) more than one targets the same item.
+    const r =
+      [...replacements]
+        .filter((x) => replacementMatches(x, template.id, item))
+        .sort((a, b) => b.recordedAt - a.recordedAt)[0] ?? null;
+    if (r) used.add(r.id);
+    const original = scale(item.snapshot, item.grams);
+    return {
+      item,
+      replacement: r,
+      original,
+      effective: r ? scale(r.replacement.snapshot, r.replacement.grams) : original,
+    };
+  });
+  return { items, orphaned: replacements.filter((r) => !used.has(r.id)) };
+}
+
+/** Builds a replacement for `item` on `date`, snapshotting both foods' library values. */
+export function makeReplacement(
+  args: {
+    id?: string;
+    date: DayKey;
+    planFrom: DayKey;
+    templateId: string;
+    item: PlanItem;
+    foodId: string;
+    variantId: string;
+    grams: number;
+  },
+  now = Date.now(),
+): FoodReplacement {
+  const v = variantOf(args.foodId, args.variantId);
+  if (!v) throw new Error('Unknown food');
+  return {
+    id: args.id ?? crypto.randomUUID(),
+    date: args.date,
+    templateId: args.templateId,
+    itemId: args.item.id,
+    planFrom: args.planFrom,
+    original: {
+      foodId: args.item.foodId,
+      variantId: args.item.variantId,
+      grams: args.item.grams,
+      snapshot: { ...args.item.snapshot },
+    },
+    replacement: {
+      foodId: args.foodId,
+      variantId: args.variantId,
+      grams: args.grams,
+      snapshot: {
+        name: foodById(args.foodId)?.name ?? args.foodId,
+        variant: v.label,
+        kcal: v.kcal,
+        protein: v.protein,
+        carbs: v.carbs,
+        fat: v.fat,
+      },
+    },
+    recordedAt: now,
+  };
+}
+
 export interface Sources {
   plan: NutritionPlan | null;
   weights: WeightEntry[];
   burns: BurnEntry[];
   extras: ExtraFood[];
+  replacements?: FoodReplacement[];
 }
 
 /** Pre-indexes records by date so a week can be computed cheaply. */
@@ -358,18 +492,25 @@ export function indexSources(s: Sources) {
     if (!extrasByDate.has(e.date)) extrasByDate.set(e.date, []);
     extrasByDate.get(e.date)!.push(e);
   }
-  return { plan: s.plan, weights: sortEntries(s.weights), burnByDate, extrasByDate };
+  const replacementsByDate = new Map<DayKey, FoodReplacement[]>();
+  for (const r of s.replacements ?? []) {
+    if (!replacementsByDate.has(r.date)) replacementsByDate.set(r.date, []);
+    replacementsByDate.get(r.date)!.push(r);
+  }
+  return { plan: s.plan, weights: sortEntries(s.weights), burnByDate, extrasByDate, replacementsByDate };
 }
 
 export type Indexed = ReturnType<typeof indexSources>;
 
 export function dayBalance(ix: Indexed, date: DayKey, today: DayKey): DayBalance {
   const profile = ix.plan?.profile ?? PROFILE;
-  const version = planOn(ix.plan, date);
-  const template = version
-    ? (version.templates.find((t) => t.id === version.days[weekday(date)]) ?? null)
-    : null;
-  const planned = template ? templateTotals(template) : { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+  const { template } = templateOn(ix.plan, date);
+  const dayReplacements = ix.replacementsByDate.get(date) ?? [];
+  const schedule = template
+    ? scheduledItems(template, dayReplacements)
+    : { items: [], orphaned: dayReplacements };
+  // Replaced items count their replacement instead of the original — never both.
+  const planned = sum(schedule.items.map((i) => i.effective));
   const extras = ix.extrasByDate.get(date) ?? [];
   const extraKcal = extras.reduce((s, e) => s + e.kcal, 0);
   const macros: Macros = { protein: planned.protein, carbs: planned.carbs, fat: planned.fat, unknown: 0 };
@@ -406,6 +547,9 @@ export function dayBalance(ix: Indexed, date: DayKey, today: DayKey): DayBalance
     reason,
     templateName: template?.name ?? null,
     plannedKcal: planned.kcal,
+    originalPlannedKcal: sum(schedule.items.map((i) => i.original)).kcal,
+    scheduled: schedule.items,
+    orphanedReplacements: schedule.orphaned,
     extraKcal,
     extras,
     intakeKcal,

@@ -14,6 +14,7 @@ import { JourneyCard, JourneySettingsSheet, JourneySetupSheet } from './componen
 import { ExtraFoodSheet } from './components/ExtraFoodSheet';
 import { FatLossCard, FatLossDetailsSheet } from './components/FatLossCard';
 import { NutritionPlanSheet } from './components/NutritionPlanSheet';
+import { ReplaceFoodSheet } from './components/ReplaceFoodSheet';
 import { fatWeekStart, indexSources, weekBalance, type ExtraFood } from './lib/fatloss';
 import { WeightCard } from './components/WeightCard';
 import { WeightSetupSheet, WeightSheet } from './components/WeightSheet';
@@ -35,6 +36,7 @@ type SheetState =
   | { kind: 'nutrition-plan' }
   | { kind: 'extra-food'; extra: ExtraFood | null }
   | { kind: 'fat-details' }
+  | { kind: 'replace-food'; date?: DayKey; itemId?: string }
   | null;
 
 export function App() {
@@ -126,6 +128,7 @@ function Main() {
         weights: store.weight.entries,
         burns: store.burn.entries,
         extras: store.nutrition.extras,
+        replacements: store.nutrition.replacements,
       }),
     [store.nutrition, store.weight.entries, store.burn.entries],
   );
@@ -337,7 +340,21 @@ function Main() {
             store.weight.entries.length ? store.weight.entries[store.weight.entries.length - 1].value : null
           }
           onEditExtra={(extra) => setSheet({ kind: 'extra-food', extra })}
+          onReplace={(date, itemId) => setSheet({ kind: 'replace-food', date, itemId })}
           onClose={closeSheet}
+        />
+      )}
+      {sheet?.kind === 'replace-food' && (
+        <ReplaceFoodSheet
+          key="replace-food"
+          plan={store.nutrition.plan}
+          replacements={store.nutrition.replacements}
+          today={today}
+          initialDate={sheet.date}
+          initialItemId={sheet.itemId}
+          onSave={store.saveReplacement}
+          onDelete={store.deleteReplacement}
+          onClose={() => setSheet({ kind: 'fat-details' })}
         />
       )}
       {sheet?.kind === 'journey-setup' && (

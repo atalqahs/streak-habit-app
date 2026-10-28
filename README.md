@@ -68,6 +68,13 @@ Projected Deficit"), shown separately from completed days and provisional until 
 starts at zero and previous weeks are listed separately. "+ Extra Food" adds a one-off item for a
 single date, from the library or as a custom snack (label calories, or 4-4-9 from all three macros).
 
+**Replace Food — Today Only** (Weekly Fat Loss details) swaps one scheduled food for another
+library food on a single date — e.g. 400 g cooked chicken thighs → 400 g cooked sirloin on one
+Thursday. The original item stops counting for that date and the replacement counts once; the weekly
+plan, other days and future weeks are unchanged. Replacements target the exact plan item, store
+snapshots of both foods, can be edited or reverted, work on past dates, and combine with Extra Food.
+If the plan item changes later, the replacement is shown as "not counted" instead of silently applying.
+
 Food values: USDA FoodData Central SR Legacy (FDC ids in `src/lib/foods.ts`); Critical Whey from the
 user-supplied label. Saved plans snapshot the values they used.
 
@@ -97,7 +104,7 @@ npm run icons      # regenerate icons/splash PNGs (needs Playwright + Chromium)
 `https://<user>.github.io/<repo>/` and on a custom domain. The service worker (`dist/sw.js`) is
 generated at build time from `src/sw-template.js` with a content-hashed cache name. When a new
 version activates it removes the old cache and reloads open windows, so updates appear on the next
-launch. IndexedDB upgrades only ever add stores (v2 added weight, v3 burn, v4 journey, v5 nutrition).
+launch. IndexedDB upgrades only ever add stores (v2 added weight, v3 burn, v4 journey, v5 nutrition, v6 food replacements).
 
 ## Deploying to GitHub Pages
 

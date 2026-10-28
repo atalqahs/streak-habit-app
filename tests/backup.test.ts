@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BackupError, createBackup, parseBackup } from '../src/lib/backup';
-import { withVersion } from '../src/lib/fatloss';
+import { makeReplacement, withVersion } from '../src/lib/fatloss';
 import type { Habit } from '../src/lib/types';
 
 const habit: Habit = {
@@ -82,7 +82,20 @@ const extra = {
   fat: 10,
   recordedAt: 1,
 };
-const nutrition = { plan, extras: [extra] };
+const replacement = makeReplacement(
+  {
+    id: 'r1',
+    date: '2026-10-29',
+    planFrom: plan.versions[0].from,
+    templateId: 'L',
+    item: plan.versions[0].templates[0].items[0],
+    foodId: 'beef-sirloin-0',
+    variantId: 'cooked',
+    grams: 400,
+  },
+  5,
+);
+const nutrition = { plan, extras: [extra], replacements: [replacement] };
 
 const text = (overrides: Record<string, unknown> = {}) =>
   JSON.stringify({ ...createBackup([habit], [entry], weight, burn, journey, nutrition), ...overrides });
@@ -145,6 +158,22 @@ describe('backup', () => {
     const parsed = parseBackup(v3);
     expect(parsed.burn).toEqual(sortedBurn);
     expect(parsed.journey).toBeUndefined();
+  });
+
+  it('round-trips one-day food replacements with their snapshots', () => {
+    const parsed = parseBackup(text()).nutrition!;
+    expect(parsed.replacements).toEqual([replacement]);
+    expect(parsed.replacements![0].original.snapshot.kcal).toBe(179);
+    expect(parsed.replacements![0].replacement.snapshot.kcal).toBe(183);
+  });
+
+  it('imports v5 backups (no replacements) leaving replacements untouched', () => {
+    const v5 = JSON.parse(text());
+    v5.version = 5;
+    delete v5.nutrition.replacements;
+    const parsed = parseBackup(JSON.stringify(v5)).nutrition!;
+    expect(parsed.extras).toEqual([extra]);
+    expect(parsed.replacements).toBeUndefined();
   });
 
   it('imports v4 backups without touching nutrition data', () => {
@@ -312,6 +341,41 @@ describe('backup', () => {
       'duplicate extra food',
       text({ nutrition: { ...nutrition, extras: [extra, extra] } }),
       'duplicate extra',
+    ],
+    [
+      'replacement with zero grams',
+      text({
+        nutrition: {
+          ...nutrition,
+          replacements: [{ ...replacement, replacement: { ...replacement.replacement, grams: 0 } }],
+        },
+      }),
+      'food or grams',
+    ],
+    [
+      'replacement with negative values',
+      text({
+        nutrition: {
+          ...nutrition,
+          replacements: [
+            {
+              ...replacement,
+              original: { ...replacement.original, snapshot: { ...replacement.original.snapshot, kcal: -1 } },
+            },
+          ],
+        },
+      }),
+      'nutrition values',
+    ],
+    [
+      'two replacements for one item on one day',
+      text({ nutrition: { ...nutrition, replacements: [replacement, { ...replacement, id: 'r2' }] } }),
+      'same food twice',
+    ],
+    [
+      'replacement bad date',
+      text({ nutrition: { ...nutrition, replacements: [{ ...replacement, date: '2026-02-30' }] } }),
+      'Food replacement 1 is invalid',
     ],
   ])('rejects %s', (_name, input, message) => {
     expect(() => parseBackup(input)).toThrow(BackupError);
